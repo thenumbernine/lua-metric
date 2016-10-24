@@ -158,6 +158,8 @@ void main() {
 	}
 
 	self:setOption(options[1])
+	
+	self.controlPtr = ffi.new('int[1]', controlIndexes.rotate-1)
 end
 
 function App:calculateMesh()
@@ -214,6 +216,9 @@ function App:calculateMesh()
 				end
 			end
 		end
+		for _,str in ipairs(self.strs) do
+			print(str)
+		end
 	end
 
 	self.displayList = gl.glGenLists(1)
@@ -228,6 +233,8 @@ function App:calculateMesh()
 		end
 		return pt
 	end
+
+	self.vtxs = table()
 
 	local u, v = params:unpack()
 	local du = (u.max - u.min) / u.divs
@@ -246,8 +253,9 @@ function App:calculateMesh()
 				local dp_du = (getpt(uvalue + du, vvalue) - getpt(uvalue - du, vvalue)) * .5
 				local dp_dv = (getpt(uvalue, vvalue + dv) - getpt(uvalue, vvalue - dv)) * .5
 				gl.glNormal3f(vec3.cross(dp_du, dp_dv):unpack())
-				
-				gl.glVertex3f(table.unpack(pt))
+			
+				self.vtxs:insert(pt)
+				gl.glVertex3f(pt:unpack())
 			end
 		end
 		gl.glEnd()
@@ -317,7 +325,15 @@ function App:setOption(option)
 	self:calculateMesh()
 end
 
+local controls = table{'rotate', 'select', 'direct'}
+local controlIndexes = controls:map(function(v,k) return k,v end)
+
 function App:updateGUI()
+	if ig.igCollapsingHeader'controls:' then
+		for i,control in ipairs(controls) do	
+			ig.igRadioButton(control, self.controlPtr, i-1)
+		end
+	end
 	if ig.igCollapsingHeader'predefined:' then
 		for _,option in ipairs(options) do
 			if ig.igButton(option.name) then
@@ -387,19 +403,35 @@ function App:update()
 	
 	mouse:update()
 
+	local ray	-- = mouse point and direction
+	local function lineRayDist(v, ray)
+		
+	end
 	if not ig.igGetIO()[0].WantCaptureKeyboard then 
-		if mouse.leftClick then
-		elseif mouse.leftDragging then
-			if leftShiftDown or rightShiftDown then
-				viewDist = viewDist * math.exp(100 * zoomFactor * mouse.deltaPos[2])
-			else
-				local magn = mouse.deltaPos:length() * 1000
-				if magn > 0 then
-					local normDelta = mouse.deltaPos / magn
-					local r = quat():fromAngleAxis(-normDelta[2], normDelta[1], 0, -magn)
-					viewAngle = (viewAngle * r):normalize()
+		if self.controlPtr[0] == controlIndexes.rotate-1 then
+			if mouse.leftDragging then
+				if leftShiftDown or rightShiftDown then
+					viewDist = viewDist * math.exp(100 * zoomFactor * mouse.deltaPos[2])
+				else
+					local magn = mouse.deltaPos:length() * 1000
+					if magn > 0 then
+						local normDelta = mouse.deltaPos / magn
+						local r = quat():fromAngleAxis(-normDelta[2], normDelta[1], 0, -magn)
+						viewAngle = (viewAngle * r):normalize()
+					end
 				end
 			end
+		elseif self.controlPtr[0] == controlIndexes.select-1 then
+			if mouse.leftClick then
+				-- find closest point on mesh via mouseray
+				local best = self.vtxs:map(function(v)
+					return lineRayDist(v, ray)
+				end):inf()
+			end	
+		elseif self.controlPtr[0] == controlIndexes.direct-1 then
+			if mouse.leftClick then
+				-- find closest point on mesh via mouseray
+			end	
 		end
 	end
 		
