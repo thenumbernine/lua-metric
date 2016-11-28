@@ -92,6 +92,9 @@ local options = table{
 	},
 }
 
+local controls = table{'rotate', 'select', 'direct'}
+local controlIndexes = controls:map(function(v,k) return k,v end)
+
 function App:init(...)
 	App.super.init(self, ...)
 
@@ -234,7 +237,7 @@ function App:calculateMesh()
 		return pt
 	end
 
-	self.vtxs = table()
+	self.mesh = table()
 
 	local u, v = params:unpack()
 	local du = (u.max - u.min) / u.divs
@@ -250,11 +253,17 @@ function App:calculateMesh()
 				local pt = getpt(uvalue, vvalue)
 				gl.glTexCoord2f(uvalue, vvalue)
 				
-				local dp_du = (getpt(uvalue + du, vvalue) - getpt(uvalue - du, vvalue)) * .5
-				local dp_dv = (getpt(uvalue, vvalue + dv) - getpt(uvalue, vvalue - dv)) * .5
-				gl.glNormal3f(vec3.cross(dp_du, dp_dv):unpack())
+				local dp_du = ((getpt(uvalue + du, vvalue) - getpt(uvalue - du, vvalue))):normalize()
+				local dp_dv = ((getpt(uvalue, vvalue + dv) - getpt(uvalue, vvalue - dv))):normalize()
+				local n = vec3.cross(dp_du, dp_dv):normalize()
+				gl.glNormal3f(n:unpack())
 			
-				self.vtxs:insert(pt)
+				self.mesh:insert{
+					p=pt,
+					dp_du=dp_du,
+					dp_dv=dp_dv,
+					n=n,
+				}
 				gl.glVertex3f(pt:unpack())
 			end
 		end
@@ -324,9 +333,6 @@ function App:setOption(option)
 	end
 	self:calculateMesh()
 end
-
-local controls = table{'rotate', 'select', 'direct'}
-local controlIndexes = controls:map(function(v,k) return k,v end)
 
 function App:updateGUI()
 	if ig.igCollapsingHeader'controls:' then
@@ -399,13 +405,19 @@ function App:updateGUI()
 end
 
 function App:update()
+	local w, h = self:size()
+	local ar = w / h
+	
 	gl.glClear(bit.bor(gl.GL_COLOR_BUFFER_BIT, gl.GL_DEPTH_BUFFER_BIT))
 	
 	mouse:update()
 
 	local ray	-- = mouse point and direction
 	local function lineRayDist(v, ray)
-		
+		local src = viewPos 
+		local dir = viewAngle:rotate(vec3(ar * (mouse.pos[1]*2-1), mouse.pos[2]*2-1, -1))
+		local t = math.max(0, (v - src):dot(dir) / dir:lenSq())
+		return (src + t * dir - v):length()
 	end
 	if not ig.igGetIO()[0].WantCaptureKeyboard then 
 		if self.controlPtr[0] == controlIndexes.rotate-1 then
@@ -424,13 +436,18 @@ function App:update()
 		elseif self.controlPtr[0] == controlIndexes.select-1 then
 			if mouse.leftClick then
 				-- find closest point on mesh via mouseray
-				local best = self.vtxs:map(function(v)
-					return lineRayDist(v, ray)
+				self.selectedVtx = self.mesh:map(function(v)
+					return lineRayDist(v.pt, ray)
 				end):inf()
 			end	
 		elseif self.controlPtr[0] == controlIndexes.direct-1 then
 			if mouse.leftClick then
 				-- find closest point on mesh via mouseray
+				local _, bestPt = self.mesh:map(function(v)
+					return lineRayDist(v.pt, ray)
+				end):inf()
+				self.dir = bestPt - self.selectedVtx
+					-- ... reprojected onto the surface
 			end	
 		end
 	end
@@ -438,8 +455,6 @@ function App:update()
 	viewPos = viewAngle:zAxis() * viewDist 
 	
 	gl.glClear(gl.GL_DEPTH_BUFFER_BIT + gl.GL_COLOR_BUFFER_BIT)
-	local w, h = self:size()
-	local ar = w / h
 	gl.glMatrixMode(gl.GL_PROJECTION)
 	gl.glLoadIdentity()
 	gl.glFrustum(-zNear * ar * tanFovX, zNear * ar * tanFovX, -zNear * tanFovY, zNear * tanFovY, zNear, zFar);
@@ -451,7 +466,6 @@ function App:update()
 	gl.glRotated(-aa[4], aa[1], aa[2], aa[3])
 	gl.glTranslated(-viewPos[1], -viewPos[2], -viewPos[3])
 
-
 	self.shader:use()
 	--self.tex:enable()
 	--self.tex:bind()
@@ -459,7 +473,24 @@ function App:update()
 	--self.tex:unbind()
 	--self.tex:disable()
 	self.shader:useNone()
-	
+
+	local v = self.mesh[self.selectedVtx] or self.mesh[1]
+	if v then
+		gl.glColor3f(1,1,1)
+		for sign=-1,1,2 do
+			gl.glBegin(gl.GL_LINE_LOOP)
+			for i=1,100 do
+				local theta = 2 * math.pi * i / 100
+				local radius = .1
+				local x = v.dp_du * (math.cos(theta) * radius)
+				local y = v.dp_dv * (math.sin(theta) * radius)
+				local z = v.n * (.01 * sign)
+				gl.glVertex3f((v.pt + x + y + z):unpack())
+			end
+			gl.glEnd()
+		end
+	end
+
 	App.super.update(self)
 end
 
