@@ -259,7 +259,7 @@ function App:calculateMesh()
 				gl.glNormal3f(n:unpack())
 			
 				self.mesh:insert{
-					p=pt,
+					pt=pt,
 					dp_du=dp_du,
 					dp_dv=dp_dv,
 					n=n,
@@ -413,12 +413,19 @@ function App:update()
 	mouse:update()
 
 	local ray	-- = mouse point and direction
+	
 	local function lineRayDist(v, ray)
+		print('v',v)
+		print('ray',ray)
 		local src = viewPos 
 		local dir = viewAngle:rotate(vec3(ar * (mouse.pos[1]*2-1), mouse.pos[2]*2-1, -1))
 		local t = math.max(0, (v - src):dot(dir) / dir:lenSq())
+		print('src',src)
+		print('dir',dir)
+		print('t',t)
 		return (src + t * dir - v):length()
 	end
+	
 	if not ig.igGetIO()[0].WantCaptureKeyboard then 
 		if self.controlPtr[0] == controlIndexes.rotate-1 then
 			if mouse.leftDragging then
