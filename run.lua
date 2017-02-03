@@ -415,15 +415,15 @@ function App:update()
 	local ray	-- = mouse point and direction
 	
 	local function lineRayDist(v, ray)
-		print('v',v)
-		print('ray',ray)
+		--print('v',v)
+		--print('ray',ray)
 		local src = viewPos 
 		local dir = viewAngle:rotate(vec3(ar * (mouse.pos[1]*2-1), mouse.pos[2]*2-1, -1))
 		local t = math.max(0, (v - src):dot(dir) / dir:lenSq())
-		print('src',src)
-		print('dir',dir)
-		print('t',t)
-		return (src + t * dir - v):length()
+		--print('src',src)
+		--print('dir',dir)
+		--print('t',t)
+		return (src + dir * t - v):length()
 	end
 	
 	if not ig.igGetIO()[0].WantCaptureKeyboard then 
