@@ -12,6 +12,7 @@ local FBO = require 'gl.fbo'
 local Mouse = require 'gui.mouse'
 local vec3 = require 'vec.vec3'
 local quat = require 'vec.quat'
+local matrix = require 'matrix'
 local symmath = require 'symmath'
 symmath.tostring = require 'symmath.tostring.SingleLine'
 
@@ -255,14 +256,21 @@ function App:calculateMesh()
 	
 	local u1, u2 = params:unpack()
 
-	self.get_dp_du = function(u1value, u2value)
+	self.get_dp_du1 = function(u1value, u2value)
 		local du = (u1.max - u1.min) / u1.divs
 		return ((self.getpt(u1value + du, u2value) - self.getpt(u1value - du, u2value))):normalize()
 	end
 
-	self.get_dp_dv = function(u1value, u2value)
+	self.get_dp_du2 = function(u1value, u2value)
 		local dv = (u2.max - u2.min) / u2.divs
 		return ((self.getpt(u1value, u2value + dv) - self.getpt(u1value, u2value - dv))):normalize()
+	end
+
+	self.get_dp_du = function(...)
+		return matrix{
+			matrix{self.get_dp_du1(...):unpack()},
+			matrix{self.get_dp_du2(...):unpack()},
+		}:transpose()
 	end
 
 	for u1div=0,u1.divs-1 do
@@ -275,9 +283,9 @@ function App:calculateMesh()
 				local u1value = u1frac * (u1.max - u1.min) + u1.min
 				local pt = self.getpt(u1value, u2value)
 				gl.glTexCoord2f(u1value, u2value)
-				
-				local dp_du = self.get_dp_du(u1value, u2value)
-				local dp_dv = self.get_dp_dv(u1value, u2value) 
+			
+				local dp_du = self.get_dp_du1(u1value, u2value)
+				local dp_dv = self.get_dp_du2(u1value, u2value) 
 				local n = vec3.cross(dp_du, dp_dv):normalize()
 				gl.glNormal3f(n:unpack())
 				
@@ -476,13 +484,12 @@ function App:update()
 			then
 				local u = self:getCoord(mouse.pos:unpack())
 				if u then
-					local dp_du = self.get_dp_du(u:unpack())
-					local dp_dv = self.get_dp_dv(u:unpack())
 					local dir = self.getpt(u:unpack()) - self.getpt(self.selectedPt:unpack())
-					self.dir = vec2(
-						dp_du:dot(dir),
-						dp_dv:dot(dir)
-					):normalize()
+					local dp_du = self.get_dp_du(u:unpack()):transpose()
+					dir = matrix{dir}:transpose()
+					local udir = dp_du * dir
+					udir = udir:transpose()[1]
+					self.dir = vec2(table.unpack(udir)):normalize()
 				end	
 			end	
 		end
@@ -516,9 +523,10 @@ function App:update()
 
 	local u = self.selectedPt
 	if u then
+		-- draw selected coordinate
 		local pt = self.getpt(u:unpack())
-		local dp_du = self.get_dp_du(u:unpack())
-		local dp_dv = self.get_dp_dv(u:unpack())
+		local dp_du = self.get_dp_du1(u:unpack())
+		local dp_dv = self.get_dp_du2(u:unpack())
 		local n = vec3.cross(dp_du, dp_dv)
 		gl.glColor3f(1,1,1)
 		for sign=-1,1,2 do
