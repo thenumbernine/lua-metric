@@ -211,9 +211,9 @@ function App:calculateMesh()
 		local eta = Tensor('_IJ', {1,0,0},{0,1,0},{0,0,1})
 		Tensor.metric(eta, eta, 'I')
 
-		local u = Tensor('^I', eqns:map(function(eqn) return eqn.expr end):unpack())
+		local p = Tensor('^I', eqns:map(function(eqn) return eqn.expr end):unpack())
 		local e = Tensor'_u^I'
-		e['_u^I'] = u'^I_,u'()
+		e['_u^I'] = p'^I_,u'()
 		local g = (e'_u^I' * e'_v^J' * eta'_IJ')()
 		Tensor.metric(g)
 		local dg = g'_uv,w'()
@@ -239,6 +239,18 @@ function App:calculateMesh()
 		for _,str in ipairs(self.strs) do
 			print(str)
 		end
+	
+		self.Gamma = range(2):map(function(i)
+			return range(2):map(function(j)
+				return range(2):map(function(k)
+					local expr = symmath.clone(Gamma[i][j][k])()
+					for var,value in pairs(self.consts) do
+						expr = expr:replace(var, value)()
+					end
+					return (expr:compile(vars))
+				end)
+			end)
+		end)
 	end
 
 	self.displayList = gl.glGenLists(1)
@@ -506,27 +518,12 @@ function App:update()
 
 	self:drawMesh'display'
 
-	gl.glDisable(gl.GL_DEPTH_TEST)
 
-	if self.dir then
-		gl.glColor3f(1,1,0)
-		gl.glBegin(gl.GL_LINE_STRIP)
-		local u = self.selectedPt
-		local du_dlambda = self.dir
-		local lambda = .05
-		for i=1,100 do
-			u = u + du_dlambda * lambda
-			gl.glVertex3d(self.getpt(u:unpack()):unpack())
-		end
-		gl.glEnd()
-	end
-
-	local u = self.selectedPt
-	if u then
+	if self.selectedPt then
 		-- draw selected coordinate
-		local pt = self.getpt(u:unpack())
-		local dp_du = self.get_dp_du1(u:unpack())
-		local dp_dv = self.get_dp_du2(u:unpack())
+		local pt = self.getpt(self.selectedPt:unpack())
+		local dp_du = self.get_dp_du1(self.selectedPt:unpack())
+		local dp_dv = self.get_dp_du2(self.selectedPt:unpack())
 		local n = vec3.cross(dp_du, dp_dv)
 		gl.glColor3f(1,1,1)
 		for sign=-1,1,2 do
@@ -542,7 +539,46 @@ function App:update()
 			gl.glEnd()
 		end
 	end
+	
+	gl.glDisable(gl.GL_DEPTH_TEST)
+	
+	if self.dir then
+		gl.glColor3f(1,1,0)
+		gl.glBegin(gl.GL_LINE_STRIP)
+		local u = self.selectedPt
+		local du_dl = self.dir
+		local l = .05
+		for i=1,100 do
+			u = u + du_dl * l
+			gl.glVertex3d(self.getpt(u:unpack()):unpack())
+		end
+		gl.glEnd()
+	
+		gl.glColor3f(1,0,1)
+		gl.glBegin(gl.GL_LINE_STRIP)
+		local u = self.selectedPt
+		local du_dl = self.dir
+		local dl = .05
+		for iter=1,100 do
+			-- x''^a + Gamma^a_uv x'^u x'^v = 0
+			-- x''^a = -Gamma^a_uv x'^u x'^v
+			u = u + du_dl * dl
+			for i=1,2 do
+				for j=1,2 do
+					for k=1,2 do
+						assert(self.Gamma[i][j][k], "failed for "..i..','..j..','..k)
+						assert(type(self.Gamma[i][j][k]) == 'function')
+						du_dl[i] = du_dl[i] - self.Gamma[i][j][k](u[1], u[2]) * du_dl[j] * du_dl[k] * dl
+					end
+				end
+			end
+			gl.glVertex3d(self.getpt(u:unpack()):unpack())
+		end
+		gl.glEnd()
 		
+	end
+
+	
 	gl.glEnable(gl.GL_DEPTH_TEST)
 
 	App.super.update(self)
