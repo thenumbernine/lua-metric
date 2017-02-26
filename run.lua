@@ -332,6 +332,7 @@ function App:setOption(option)
 		print('to',eqn.expr)
 	end
 	self:calculateMesh()
+	self.selectedVtx = 1
 end
 
 function App:updateGUI()
@@ -414,16 +415,12 @@ function App:update()
 
 	local ray	-- = mouse point and direction
 	
-	local function lineRayDist(v, ray)
-		--print('v',v)
-		--print('ray',ray)
+	local function lineRayDist(v)
 		local src = viewPos 
 		local dir = viewAngle:rotate(vec3(ar * (mouse.pos[1]*2-1), mouse.pos[2]*2-1, -1))
 		local t = math.max(0, (v - src):dot(dir) / dir:lenSq())
-		--print('src',src)
-		--print('dir',dir)
-		--print('t',t)
-		return (src + dir * t - v):length()
+		local pt = (src + dir * t - v):length()
+		return pt
 	end
 	
 	if not ig.igGetIO()[0].WantCaptureKeyboard then 
@@ -442,19 +439,24 @@ function App:update()
 			end
 		elseif self.controlPtr[0] == controlIndexes.select-1 then
 			if mouse.leftClick then
-				-- find closest point on mesh via mouseray
-				self.selectedVtx = self.mesh:map(function(v)
-					return lineRayDist(v.pt, ray)
-				end):inf()
+				-- [[ find closest point on mesh via mouseray
+				self.selectedVtx = select(2, self.mesh:map(function(v)
+					return lineRayDist(v.pt)
+				end):inf())
+				print(self.selectedVtx)
+				--]]
+				-- [[ read back the coordinate of the mesh
+				--]]
 			end	
 		elseif self.controlPtr[0] == controlIndexes.direct-1 then
 			if mouse.leftClick then
-				-- find closest point on mesh via mouseray
-				local _, bestPt = self.mesh:map(function(v)
-					return lineRayDist(v.pt, ray)
-				end):inf()
-				self.dir = bestPt - self.selectedVtx
+				-- [[ find closest point on mesh via mouseray
+				local bestPt = self.mesh[select(2, self.mesh:map(function(v)
+					return lineRayDist(v.pt)
+				end):inf())]
+				self.dir = bestPt.pt - self.mesh[self.selectedVtx].pt
 					-- ... reprojected onto the surface
+				--]]
 			end	
 		end
 	end
@@ -481,7 +483,7 @@ function App:update()
 	--self.tex:disable()
 	self.shader:useNone()
 
-	local v = self.mesh[self.selectedVtx] or self.mesh[1]
+	local v = self.mesh[self.selectedVtx]
 	if v then
 		gl.glColor3f(1,1,1)
 		for sign=-1,1,2 do
