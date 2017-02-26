@@ -6,8 +6,9 @@ local ffi = require 'ffi'
 local ig = require 'ffi.imgui'
 local gl = require 'ffi.OpenGL'
 local sdl = require 'ffi.sdl'
+local GLProgram = require 'gl.program'
 local GLTex2D = require 'gl.tex2d'
-local Image = require 'image'
+local FBO = require 'gl.fbo'
 local Mouse = require 'gui.mouse'
 local vec3 = require 'vec.vec3'
 local quat = require 'vec.quat'
@@ -106,27 +107,7 @@ function App:initGL(...)
 
 	gl.glEnable(gl.GL_DEPTH_TEST)
 
---[[ tex: todo just render the shader to the tex and you'll get mipmapping!
-	local width, height = 64, 64
-	self.tex = GLTex2D{
-		image = Image(width, height, 4, 'unsigned char', function(i,j)
-			if i == 0 
-			or i == width-1
-			or j == 0 
-			or j == height-1
-			then
-				return 0,0,0,255
-			else
-				return 0,127,127,255
-			end
-		end),
-		minFilter = gl.GL_LINEAR_MIPMAP_LINEAR,	
-		magFilter = gl.GL_LINEAR,	
-		generateMipmap = true,
-	}
---]]	
-	local GLProgram = require 'gl.program'
-	self.shader = GLProgram{
+	self.displayShader = GLProgram{
 		vertexCode = [[
 varying vec2 intCoordV;
 varying vec3 normalV;
@@ -159,6 +140,41 @@ void main() {
 }
 ]],
 	}
+
+	self.pickShader = GLProgram{
+		vertexCode = [[
+varying vec2 intCoordV;
+void main() {
+	gl_Position = ftransform();
+	intCoordV = gl_MultiTexCoord0.st;
+}
+]],
+		fragmentCode = [[
+varying vec2 intCoordV;
+void main() {
+	gl_FragColor = vec4(intCoordV, 0., 1.);
+}
+]],
+	}
+
+	self.floatTex = GLTex2D{
+		width = 2048,
+		height = 2048,
+		internalFormat = gl.GL_RGBA32F,
+		format = gl.GL_RGBA,
+		type = gl.GL_FLOAT,
+		minFilter = gl.GL_NEAREST,
+		magFilter = gl.GL_NEAREST,
+	}
+	self.fbo = FBO{
+		width = self.floatTex.width, 
+		height = self.floatTex.height, 
+		useDepth = true,
+	}
+	self.fbo:setColorAttachmentTex2D(0, self.floatTex.id)
+	self.fbo:bind()
+	self.fbo:check()
+	self.fbo:unbind()
 
 	self:setOption(options[1])
 	
@@ -227,52 +243,53 @@ function App:calculateMesh()
 	self.displayList = gl.glGenLists(1)
 	gl.glNewList(self.displayList, gl.GL_COMPILE)
 
-	local function getpt(uvalue, vvalue)
+	self.getpt = function(u1value, u2value)
 		local pt = vec3()
 		for i=1,3 do
 			if eqns[i] then 
-				pt[i] = eqns[i].func(uvalue, vvalue) 
+				pt[i] = eqns[i].func(u1value, u2value) 
 			end
 		end
 		return pt
 	end
+	
+	local u1, u2 = params:unpack()
 
-	self.mesh = table()
+	self.get_dp_du = function(u1value, u2value)
+		local du = (u1.max - u1.min) / u1.divs
+		return ((self.getpt(u1value + du, u2value) - self.getpt(u1value - du, u2value))):normalize()
+	end
 
-	local u, v = params:unpack()
-	local du = (u.max - u.min) / u.divs
-	local dv = (v.max - v.min) / v.divs
-	for udiv=0,u.divs-1 do
+	self.get_dp_dv = function(u1value, u2value)
+		local dv = (u2.max - u2.min) / u2.divs
+		return ((self.getpt(u1value, u2value + dv) - self.getpt(u1value, u2value - dv))):normalize()
+	end
+
+	for u1div=0,u1.divs-1 do
 		gl.glBegin(gl.GL_TRIANGLE_STRIP)
-		for vdiv=0,v.divs do
-			local vfrac = vdiv / v.divs
-			local vvalue = vfrac * (v.max - v.min) + v.min
-			for uofs=1,0,-1 do
-				local ufrac = (udiv + uofs) / u.divs
-				local uvalue = ufrac * (u.max - u.min) + u.min
-				local pt = getpt(uvalue, vvalue)
-				gl.glTexCoord2f(uvalue, vvalue)
+		for u2div=0,u2.divs do
+			local u2frac = u2div / u2.divs
+			local u2value = u2frac * (u2.max - u2.min) + u2.min
+			for u1ofs=1,0,-1 do
+				local u1frac = (u1div + u1ofs) / u1.divs
+				local u1value = u1frac * (u1.max - u1.min) + u1.min
+				local pt = self.getpt(u1value, u2value)
+				gl.glTexCoord2f(u1value, u2value)
 				
-				local dp_du = ((getpt(uvalue + du, vvalue) - getpt(uvalue - du, vvalue))):normalize()
-				local dp_dv = ((getpt(uvalue, vvalue + dv) - getpt(uvalue, vvalue - dv))):normalize()
+				local dp_du = self.get_dp_du(u1value, u2value)
+				local dp_dv = self.get_dp_dv(u1value, u2value) 
 				local n = vec3.cross(dp_du, dp_dv):normalize()
 				gl.glNormal3f(n:unpack())
-			
-				self.mesh:insert{
-					pt=pt,
-					dp_du=dp_du,
-					dp_dv=dp_dv,
-					n=n,
-				}
+				
 				gl.glVertex3f(pt:unpack())
 			end
 		end
 		gl.glEnd()
 	end
 	
-	gl.glEndList()
+	gl.glEndList()				
 end
-
+			
 local mouse = Mouse()
 local leftShiftDown
 local rightShiftDown 
@@ -332,7 +349,7 @@ function App:setOption(option)
 		print('to',eqn.expr)
 	end
 	self:calculateMesh()
-	self.selectedVtx = 1
+	self.selectedPt = (vec2(table.unpack(option.mins)) + option.maxs) * .5
 end
 
 function App:updateGUI()
@@ -405,23 +422,35 @@ function App:updateGUI()
 	end
 end
 
-function App:update()
-	local w, h = self:size()
-	local ar = w / h
-	
-	gl.glClear(bit.bor(gl.GL_COLOR_BUFFER_BIT, gl.GL_DEPTH_BUFFER_BIT))
-	
-	mouse:update()
+function App:getCoord(mx,my)
+	local results = ffi.new'float[4]'
+	local depth = ffi.new'float[1]'
+	gl.glViewport(0, 0, self.fbo.width, self.fbo.height)
+	self.fbo:bind()
+	self.fbo:check()
+	gl.glClear(bit.bor(gl.GL_DEPTH_BUFFER_BIT, gl.GL_COLOR_BUFFER_BIT))
+	gl.glMatrixMode(gl.GL_PROJECTION)
+	gl.glLoadIdentity()
+	local ar = self.width / self.height
+	gl.glFrustum(-zNear * ar * tanFovX, zNear * ar * tanFovX, -zNear * tanFovY, zNear * tanFovY, zNear, zFar);
+	self:drawMesh'pick'
+	local ix = math.floor(self.fbo.width * mx)
+	local iy = math.floor(self.fbo.height * my)
 
-	local ray	-- = mouse point and direction
-	
-	local function lineRayDist(v)
-		local src = viewPos 
-		local dir = viewAngle:rotate(vec3(ar * (mouse.pos[1]*2-1), mouse.pos[2]*2-1, -1))
-		local t = math.max(0, (v - src):dot(dir) / dir:lenSq())
-		local pt = (src + dir * t - v):length()
-		return pt
+	local u
+	if ix >= 0 and iy >= 0 and ix < self.fbo.width and iy < self.fbo.height then
+		gl.glReadPixels(ix, iy, 1, 1, gl.GL_DEPTH_COMPONENT, gl.GL_FLOAT, depth)
+		if depth[0] < 1 then 
+			gl.glReadPixels(ix, iy, 1, 1, gl.GL_RGBA, gl.GL_FLOAT, results)
+			u = vec2(results[0],results[1])
+		end
 	end
+	self.fbo:unbind()
+	return u
+end
+
+function App:update()		
+	mouse:update()
 	
 	if not ig.igGetIO()[0].WantCaptureKeyboard then 
 		if self.controlPtr[0] == controlIndexes.rotate-1 then
@@ -438,36 +467,80 @@ function App:update()
 				end
 			end
 		elseif self.controlPtr[0] == controlIndexes.select-1 then
-			if mouse.leftClick then
-				-- [[ find closest point on mesh via mouseray
-				self.selectedVtx = select(2, self.mesh:map(function(v)
-					return lineRayDist(v.pt)
-				end):inf())
-				print(self.selectedVtx)
-				--]]
-				-- [[ read back the coordinate of the mesh
-				--]]
+			if mouse.leftDown then
+				self.selectedPt = self:getCoord(mouse.pos:unpack()) or self.selectedPt
 			end	
 		elseif self.controlPtr[0] == controlIndexes.direct-1 then
-			if mouse.leftClick then
-				-- [[ find closest point on mesh via mouseray
-				local bestPt = self.mesh[select(2, self.mesh:map(function(v)
-					return lineRayDist(v.pt)
-				end):inf())]
-				self.dir = bestPt.pt - self.mesh[self.selectedVtx].pt
-					-- ... reprojected onto the surface
-				--]]
+			if mouse.leftDown
+			and self.selectedPt
+			then
+				local u = self:getCoord(mouse.pos:unpack())
+				if u then
+					local dp_du = self.get_dp_du(u:unpack())
+					local dp_dv = self.get_dp_dv(u:unpack())
+					local dir = self.getpt(u:unpack()) - self.getpt(self.selectedPt:unpack())
+					self.dir = vec2(
+						dp_du:dot(dir),
+						dp_dv:dot(dir)
+					):normalize()
+				end	
 			end	
 		end
 	end
 		
 	viewPos = viewAngle:zAxis() * viewDist 
-	
-	gl.glClear(gl.GL_DEPTH_BUFFER_BIT + gl.GL_COLOR_BUFFER_BIT)
+
+	gl.glViewport(0, 0, self.width, self.height)
+	gl.glClear(bit.bor(gl.GL_DEPTH_BUFFER_BIT, gl.GL_COLOR_BUFFER_BIT))
 	gl.glMatrixMode(gl.GL_PROJECTION)
 	gl.glLoadIdentity()
+	local ar = self.width / self.height
 	gl.glFrustum(-zNear * ar * tanFovX, zNear * ar * tanFovX, -zNear * tanFovY, zNear * tanFovY, zNear, zFar);
 
+	self:drawMesh'display'
+
+	gl.glDisable(gl.GL_DEPTH_TEST)
+
+	if self.dir then
+		gl.glColor3f(1,1,0)
+		gl.glBegin(gl.GL_LINE_STRIP)
+		local u = self.selectedPt
+		local du_dlambda = self.dir
+		local lambda = .05
+		for i=1,100 do
+			u = u + du_dlambda * lambda
+			gl.glVertex3d(self.getpt(u:unpack()):unpack())
+		end
+		gl.glEnd()
+	end
+
+	local u = self.selectedPt
+	if u then
+		local pt = self.getpt(u:unpack())
+		local dp_du = self.get_dp_du(u:unpack())
+		local dp_dv = self.get_dp_dv(u:unpack())
+		local n = vec3.cross(dp_du, dp_dv)
+		gl.glColor3f(1,1,1)
+		for sign=-1,1,2 do
+			gl.glBegin(gl.GL_LINE_LOOP)
+			for i=1,100 do
+				local theta = 2 * math.pi * i / 100
+				local radius = .1
+				local x = dp_du * (math.cos(theta) * radius)
+				local y = dp_dv * (math.sin(theta) * radius)
+				local z = n * (.01 * sign)
+				gl.glVertex3f((pt + x + y + z):unpack())
+			end
+			gl.glEnd()
+		end
+	end
+		
+	gl.glEnable(gl.GL_DEPTH_TEST)
+
+	App.super.update(self)
+end
+
+function App:drawMesh(method)
 	gl.glMatrixMode(gl.GL_MODELVIEW)
 	gl.glLoadIdentity()
 	gl.glScaled(viewScale, viewScale, viewScale)
@@ -475,32 +548,13 @@ function App:update()
 	gl.glRotated(-aa[4], aa[1], aa[2], aa[3])
 	gl.glTranslated(-viewPos[1], -viewPos[2], -viewPos[3])
 
-	self.shader:use()
-	--self.tex:enable()
-	--self.tex:bind()
-	gl.glCallList(self.displayList)
-	--self.tex:unbind()
-	--self.tex:disable()
-	self.shader:useNone()
-
-	local v = self.mesh[self.selectedVtx]
-	if v then
-		gl.glColor3f(1,1,1)
-		for sign=-1,1,2 do
-			gl.glBegin(gl.GL_LINE_LOOP)
-			for i=1,100 do
-				local theta = 2 * math.pi * i / 100
-				local radius = .1
-				local x = v.dp_du * (math.cos(theta) * radius)
-				local y = v.dp_dv * (math.sin(theta) * radius)
-				local z = v.n * (.01 * sign)
-				gl.glVertex3f((v.pt + x + y + z):unpack())
-			end
-			gl.glEnd()
-		end
+	if method == 'display' then
+		self.displayShader:use()
+	elseif method == 'pick' then
+		self.pickShader:use()
 	end
-
-	App.super.update(self)
+	gl.glCallList(self.displayList)
+	GLProgram:useNone()
 end
 
 App():run()
