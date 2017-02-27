@@ -63,6 +63,7 @@ local options = table{
 		vars = {'u', 'v'},
 		mins = {-2, -2},
 		maxs = {2, 2},
+		step = {1, 1},
 		exprs = {'u', 'v', '0'},
 	},
 	{
@@ -109,6 +110,7 @@ local options = table{
 		consts = {},
 		mins = {-1, -1},
 		maxs = {1, 1},
+		step = {1, 1},
 		vars = {'u', 'v'},
 		exprs = {'u', 'v', '-u^2 -v^2'},
 	},
@@ -117,6 +119,7 @@ local options = table{
 		consts = {},
 		mins = {-1, -1},
 		maxs = {1, 1},
+		step = {1, 1},
 		vars = {'u', 'v'},
 		exprs = {'u', 'v', 'u^2 - v^2'},
 	},
@@ -153,11 +156,12 @@ void main() {
 varying vec2 intCoordV;
 varying vec3 normalV;
 varying vec3 vertexV;
+uniform vec2 step;
 void main() {
 	vec3 n = normalize(normalV);
 	if (n.z < 0.) n = -n;	//backface lighting
 	
-	vec2 fc = mod(intCoordV.xy, 1.); //grid
+	vec2 fc = mod(intCoordV.xy / step, 1.); //grid
 	float i = 1. - 8. * fc.x * fc.y * (1. - fc.x) * (1. - fc.y);
 	i = pow(i, 50.);
 	
@@ -434,6 +438,7 @@ function App:setOption(option)
 	for i=1,#option.vars do
 		params[i].min = option.mins[i]
 		params[i].max = option.maxs[i]
+		params[i].step = option.step[i]
 	end
 	local vars = params:map(function(param) return param.var end)
 	local varnames = table(option.vars)
@@ -677,6 +682,7 @@ function App:drawMesh(method)
 
 	if method == 'display' then
 		self.displayShader:use()
+		gl.glUniform2f(self.displayShader.uniforms.step.loc, params[1].step, params[2].step)
 	elseif method == 'pick' then
 		self.pickShader:use()
 	end
