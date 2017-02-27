@@ -1,4 +1,29 @@
 #!/usr/bin/env luajit
+--[[
+
+what to visualize?
+
+*) Geodesics:
+
+x^i_;j v^j = x^i_,j v^j + Gamma^i_jk x^j v^k = 0
+
+for x -> u, v -> u, we get
+u^i_;j u^j = u^i_,j u^j + Gamma^i_jk u^j u^k = 0
+
+let du/ds = D_u u^i = u^i_;j u^j
+
+x''^i + Gamma^i_jk x'^j x'^k = 0
+x''^i + Gamma^i_jk x'^j x'^k = 0
+
+*) connections - via two vectors, for a basis, in a direction, show Gamma^i_jk u^i v^j
+
+*) geodesic deviation - [D_c, D_d] v^a = R^a_bcd v^b	<- choose vector v^a, then has freedom c & d
+				<- or choose v^a, m^c, n^d, and show R^a_bcd v^b m^c n^d
+
+*) Gaussian curvature at each point
+
+*) Ricci curvature at each point, for a given direction u^a :  R_ab u^a u^b
+--]]
 require 'ext'
 local ImGuiApp = require 'imguiapp'
 local bit = require 'bit'
@@ -42,38 +67,41 @@ local options = table{
 	},
 	{
 		name = 'Spherical',
-		consts = {r=1, pi=math.pi},
-		mins = {0, -12},
-		maxs = {12, 12},
+		consts = {r=1},
+		mins = {0, -math.pi},
+		maxs = {math.pi, math.pi},
+		step = {math.pi / 12, math.pi / 12},
 		vars = {'theta', 'phi'},
 		exprs = {
-			'r * sin(theta * pi / 12) * cos(phi * pi / 12)',
-			'r * sin(theta * pi / 12) * sin(phi * pi / 12)',
-			'r * cos(theta * pi / 12)',
+			'r * sin(theta) * cos(phi)',
+			'r * sin(theta) * sin(phi)',
+			'r * cos(theta)',
 		},
 	},
 	{
 		name = 'Polar',
 		consts = {pi=math.pi},
-		mins = {0, -12},
-		maxs = {8, 12},
+		mins = {0, -math.pi},
+		maxs = {2, math.pi},
+		step = {1/4, math.pi/4},
 		vars = {'r', 'theta'},
 		exprs = {
-			'r / 4 * cos(theta * pi / 4)',
-			'r / 4 * sin(theta * pi / 4)',
+			'r * cos(theta)',
+			'r * sin(theta)',
 			'0',
 		},
 	},
 	{
 		name = 'Torus',
 		consts = {r=.25, R=1, pi=math.pi},
-		mins = {-4, -12},
-		maxs = {4, 12},
+		mins = {-math.pi, -math.pi},
+		maxs = {math.pi, math.pi},
+		step = {math.pi / 4, math.pi / 12},
 		vars = {'theta', 'phi'},
 		exprs = {
-			'(r * sin(theta * pi / 4) + R) * cos(phi * pi / 12)',
-			'(r * sin(theta * pi / 4) + R) * sin(phi * pi / 12)',
-			'r * cos(theta * pi / 4)',
+			'(r * sin(theta) + R) * cos(phi)',
+			'(r * sin(theta) + R) * sin(phi)',
+			'r * cos(theta)',
 		},
 	},
 	{
@@ -199,6 +227,33 @@ function App:calculateMesh()
 		eqn.func = expr:compile(vars)
 	end
 
+	local function simplifyTrig(x)
+		x = x:map(function(expr)
+			-- I need to make a symmath operation out of this 
+			-- pow div -> mul div
+			-- (x/2)^2 -> x^2 / 2^2
+			if symmath.powOp.is(expr)
+			and symmath.divOp.is(expr[1])
+			then
+				if expr[2].value == 0 then
+					return 1
+				else
+					local num = (symmath.clone(expr[1][1])^symmath.clone(expr[2]))()
+					local denom = (symmath.clone(expr[1][2])^symmath.clone(expr[2]))() 
+					return (num / denom)()
+				end
+			end
+		end)
+		return x:map(function(expr)
+			if symmath.powOp.is(expr)
+			and expr[2] == symmath.Constant(2)
+			and symmath.cos.is(expr[1])
+			then
+				return 1 - symmath.sin(expr[1][1]:clone())^2
+			end
+		end)()
+	end
+
 	do
 		local x,y,z = symmath.vars('x','y','z')
 		local flatCoords = {x,y,z}
@@ -215,10 +270,31 @@ function App:calculateMesh()
 		local e = Tensor'_u^I'
 		e['_u^I'] = p'^I_,u'()
 		local g = (e'_u^I' * e'_v^J' * eta'_IJ')()
+print('g before', g)
+		g = simplifyTrig(g)
+print('g simplified', g)
 		Tensor.metric(g)
-		local dg = g'_uv,w'()
+		local dg = Tensor'_uvw'
+		dg['_uvw'] = g'_uv,w'()
+print('dg before', dg)	
+		dg = simplifyTrig(dg)
+print('dg simplified', dg)	
 		local Gamma = ((dg'_uvw' + dg'_uwv' - dg'_vwu')/2)()
 		Gamma = Gamma'^u_vw'()
+print('Gamma before', Gamma)	
+		Gamma = simplifyTrig(Gamma)
+print('Gamma simplified', Gamma)	
+		
+		--[[	
+		local dGamma = Tensor'^a_bcd'
+		dGamma['^a_bcd'] = Gamma'^a_bc,d'()
+		local Riemann = Tensor'^a_bcd'
+		Riemann['^a_bcd'] = (dGamma'^a_bdc' - dGamma'^a_bcd' + Gamma'^a_uc' * Gamma'^u_bd' - Gamma'^a_ud' * Gamma'^u_bc')()
+		local Ricci = Tensor'_ab'
+		Ricci['_ab'] = Riemann'^c_acb'()
+		local Gaussian = Ricci'^a_a'()
+		--]]
+		
 		self.strs = table()
 		for i,xi in ipairs(vars) do
 			for j,xj in ipairs(vars) do
@@ -566,8 +642,6 @@ function App:update()
 			for i=1,2 do
 				for j=1,2 do
 					for k=1,2 do
-						assert(self.Gamma[i][j][k], "failed for "..i..','..j..','..k)
-						assert(type(self.Gamma[i][j][k]) == 'function')
 						du_dl[i] = du_dl[i] - self.Gamma[i][j][k](u[1], u[2]) * du_dl[j] * du_dl[k] * dl
 					end
 				end
@@ -575,9 +649,7 @@ function App:update()
 			gl.glVertex3d(self.getpt(u:unpack()):unpack())
 		end
 		gl.glEnd()
-		
 	end
-
 	
 	gl.glEnable(gl.GL_DEPTH_TEST)
 
