@@ -285,7 +285,7 @@ print('Gamma before', Gamma)
 		Gamma = simplifyTrig(Gamma)
 print('Gamma simplified', Gamma)	
 		
-		--[[	
+		-- [[	
 		local dGamma = Tensor'^a_bcd'
 		dGamma['^a_bcd'] = Gamma'^a_bc,d'()
 		local Riemann = Tensor'^a_bcd'
@@ -308,6 +308,17 @@ print('Gamma simplified', Gamma)
 				for k,xk in ipairs(vars) do
 					if Gamma[i][j][k] ~= symmath.Constant(0) then
 						self.strs:insert('Gamma^'..xi..'_'..xj..'_'..xk..' = '..Gamma[i][j][k])
+					end
+				end
+			end
+		end
+		for i,xi in ipairs(vars) do
+			for j,xj in ipairs(vars) do
+				for k,xk in ipairs(vars) do
+					for l,xl in ipairs(vars) do
+						if Riemann[i][j][k][l] ~= symmath.Constant(0) then
+							self.strs:insert('R^'..xi..'_'..xj..'_'..xk..'_'..xl..' = '..Riemann[i][j][k][l])
+						end
 					end
 				end
 			end
