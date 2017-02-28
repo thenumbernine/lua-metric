@@ -33,6 +33,7 @@ local gl = require 'ffi.OpenGL'
 local sdl = require 'ffi.sdl'
 local GLProgram = require 'gl.program'
 local GLTex2D = require 'gl.tex2d'
+local GradientTex = require 'gl.gradienttex'
 local FBO = require 'gl.fbo'
 local Mouse = require 'gui.mouse'
 local vec3 = require 'vec.vec3'
@@ -45,11 +46,21 @@ local App = class(ImGuiApp)
 
 local eqnPtr = ffi.new('int[1]', 0)
 
+--[[
+TODO higher dimension parameters: u,v,w ... what about 4d?  stuv?
+and how to display this?  as a mesh
+and how to click-to-interact with this?
+--]]
 local params = table{
 	{var=symmath.var'u', divs=300, min=-5, max=5},
 	{var=symmath.var'v', divs=300, min=-5, max=5},
 }
+
 local u, v = params[1].var, params[2].var
+
+--[[
+TODO higher dimensions here?
+--]]
 local eqns = table{
 	{name='x', expr=u},
 	{name='y', expr=v},
@@ -128,6 +139,9 @@ local options = table{
 local controls = table{'rotate', 'select', 'direct'}
 local controlIndexes = controls:map(function(v,k) return k,v end)
 
+local displays = table{'grid', 'Gaussian', 'Ricci'}
+local displayIndexes = displays:map(function(v,k) return k,v end)
+
 function App:init(...)
 	App.super.init(self, ...)
 
@@ -139,7 +153,7 @@ function App:initGL(...)
 
 	gl.glEnable(gl.GL_DEPTH_TEST)
 
-	self.displayShader = GLProgram{
+	self.gridShader = GLProgram{
 		vertexCode = [[
 varying vec2 intCoordV;
 varying vec3 normalV;
@@ -190,15 +204,94 @@ void main() {
 ]],
 	}
 
-	self.floatTex = GLTex2D{
-		width = 2048,
-		height = 2048,
-		internalFormat = gl.GL_RGBA32F,
-		format = gl.GL_RGBA,
-		type = gl.GL_FLOAT,
-		minFilter = gl.GL_NEAREST,
-		magFilter = gl.GL_NEAREST,
+	self.gradientShader = GLProgram{
+		vertexCode = [[
+varying vec2 intCoordV;
+void main() {
+	gl_Position = ftransform();
+	intCoordV = gl_MultiTexCoord0.st;
+}
+]],
+		fragmentCode = [[
+varying vec2 intCoordV;
+uniform sampler2D tex;
+uniform sampler2D gradientTex;
+uniform vec2 mins, maxs;
+void main() {
+	vec2 tc = (intCoordV - mins) / (maxs - mins);
+	float value = texture2D(tex, tc).r;
+	gl_FragColor = texture2D(gradientTex, vec2(value, .5));
+}
+]],
+		uniforms = {
+			tex = 0,
+			gradientTex = 1,
+		},
 	}
+
+	local hsvWidth = 256
+	self.gradientTex = GradientTex(hsvWidth,
+--[[ rainbow or heatmap or whatever
+		{
+			{0,0,0,0},
+			{1,0,0,1/6},
+			{1,1,0,2/6},
+			{0,1,1,3/6},
+			{0,0,1,4/6},
+			{1,0,1,5/6},
+			{0,0,0,6/6},
+		},
+--]]
+-- [[ sunset pic from https://blog.graphiq.com/finding-the-right-color-palettes-for-data-visualizations-fcd4e707a283#.inyxk2q43
+		table{
+			vec3(22,31,86),
+			vec3(34,54,152),
+			vec3(87,49,108),
+			vec3(156,48,72),
+			vec3(220,60,57),
+			vec3(254,96,50),
+			vec3(255,188,46),
+			vec3(255,255,55),
+		}:map(function(c,i)
+			return table(c/255):append{1}
+		end),
+--]]
+		false)
+	-- change to 2D so imgui can use it
+	local data = ffi.new('unsigned char[?]', hsvWidth*4)
+	gl.glGetTexImage(gl.GL_TEXTURE_1D, 0, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE, data)
+	self.gradientTex:unbind()
+	self.gradientTex:delete()
+	self.gradientTex = GLTex2D{
+		internalFormat = gl.GL_RGBA,
+		width = hsvWidth,
+		height = 1,
+		format = gl.GL_RGBA,
+		type = gl.GL_UNSIGNED_BYTE,
+		data = data,
+		minFilter = gl.GL_LINEAR_MIPMAP_LINEAR,
+		magFilter = gl.GL_LINEAR,
+		wrap = {
+			s = gl.GL_CLAMP_TO_EDGE,
+			t = gl.GL_REPEAT,
+		},
+		generateMipmap = true,
+	}
+
+
+	local function makeFloatTex()
+		return GLTex2D{
+			width = 2048,
+			height = 2048,
+			internalFormat = gl.GL_RGBA32F,
+			format = gl.GL_RGBA,
+			type = gl.GL_FLOAT,
+			minFilter = gl.GL_NEAREST,
+			magFilter = gl.GL_NEAREST,
+		}
+	end
+
+	self.floatTex = makeFloatTex() 
 	self.fbo = FBO{
 		width = self.floatTex.width, 
 		height = self.floatTex.height, 
@@ -209,9 +302,13 @@ void main() {
 	self.fbo:check()
 	self.fbo:unbind()
 
+	self.ricciTex = makeFloatTex()
+	self.gaussianTex = makeFloatTex()
+
 	self:setOption(options[1])
 	
-	self.controlPtr = ffi.new('int[1]', controlIndexes.rotate-1)
+	self.controlPtr = ffi.new('int[1]', controlIndexes.rotate)
+	self.displayPtr = ffi.new('int[1]', displayIndexes.grid)
 end
 
 function App:calculateMesh()
@@ -221,14 +318,19 @@ function App:calculateMesh()
 	end
 
 	-- refresh ...
-
+	
 	local vars = params:map(function(param) return param.var end)
-	for _,eqn in ipairs(eqns) do
-		local expr = symmath.clone(eqn.expr)()
+
+	local function compileWithConsts(expr)
+		expr = symmath.clone(expr)()
 		for var,value in pairs(self.consts) do
 			expr = expr:replace(var, value)()
 		end
-		eqn.func = expr:compile(vars)
+		return (expr:compile(vars))
+	end
+
+	for _,eqn in ipairs(eqns) do
+		eqn.func = compileWithConsts(eqn.expr)
 	end
 
 	local function simplifyTrig(x)
@@ -274,22 +376,15 @@ function App:calculateMesh()
 		local e = Tensor'_u^I'
 		e['_u^I'] = p'^I_,u'()
 		local g = (e'_u^I' * e'_v^J' * eta'_IJ')()
-print('g before', g)
 		g = simplifyTrig(g)
-print('g simplified', g)
 		Tensor.metric(g)
 		local dg = Tensor'_uvw'
 		dg['_uvw'] = g'_uv,w'()
-print('dg before', dg)	
 		dg = simplifyTrig(dg)
-print('dg simplified', dg)	
 		local Gamma = ((dg'_uvw' + dg'_uwv' - dg'_vwu')/2)()
 		Gamma = Gamma'^u_vw'()
-print('Gamma before', Gamma)	
 		Gamma = simplifyTrig(Gamma)
-print('Gamma simplified', Gamma)	
 		
-		-- [[	
 		local dGamma = Tensor'^a_bcd'
 		dGamma['^a_bcd'] = Gamma'^a_bc,d'()
 		local Riemann = Tensor'^a_bcd'
@@ -297,51 +392,63 @@ print('Gamma simplified', Gamma)
 		local Ricci = Tensor'_ab'
 		Ricci['_ab'] = Riemann'^c_acb'()
 		local Gaussian = Ricci'^a_a'()
-		--]]
+
+		local function addStrs(name, expr)
+			if symmath.Tensor.is(expr) then
+				local any
+				for k,v in expr:iter() do
+					if v ~= symmath.Constant(0) then
+						local i = table.map(expr.variance, function(v,i)
+							return v.lower and '_'..k[i] or '^'..k[i]
+						end):concat()
+						self.strs:insert(name..i..' = '..v)
+						any = true
+					end
+				end
+				if not any then
+					local i = table.map(expr.variance, tostring):concat()
+					self.strs:insert(name..i..' = 0')
+				end
+			else
+				self.strs:insert(name..' = '..expr)
+			end
+		end
 		
 		self.strs = table()
-		for i,xi in ipairs(vars) do
-			for j,xj in ipairs(vars) do
-				if g[i][j] ~= symmath.Constant(0) then
-					self.strs:insert('g_'..xi..'_'..xj..' = '..g[i][j])
-				end
-			end
-		end
-		for i,xi in ipairs(vars) do
-			for j,xj in ipairs(vars) do
-				for k,xk in ipairs(vars) do
-					if Gamma[i][j][k] ~= symmath.Constant(0) then
-						self.strs:insert('Gamma^'..xi..'_'..xj..'_'..xk..' = '..Gamma[i][j][k])
-					end
-				end
-			end
-		end
-		for i,xi in ipairs(vars) do
-			for j,xj in ipairs(vars) do
-				for k,xk in ipairs(vars) do
-					for l,xl in ipairs(vars) do
-						if Riemann[i][j][k][l] ~= symmath.Constant(0) then
-							self.strs:insert('R^'..xi..'_'..xj..'_'..xk..'_'..xl..' = '..Riemann[i][j][k][l])
-						end
-					end
-				end
-			end
-		end
+		addStrs('g', g)
+		addStrs('Gamma', Gamma)
+		addStrs('R', Riemann)
+		addStrs('R', Ricci)
+		addStrs('R', Gaussian)
 		for _,str in ipairs(self.strs) do
 			print(str)
 		end
-	
+
+		local function buildFuncs(expr)
+			if symmath.Tensor.is(expr) then
+				return range(#expr):map(function(i)
+					return buildFuncs(expr[i])
+				end)
+			else
+				return compileWithConsts(expr)
+			end
+		end
+
 		self.Gamma = range(2):map(function(i)
 			return range(2):map(function(j)
 				return range(2):map(function(k)
-					local expr = symmath.clone(Gamma[i][j][k])()
-					for var,value in pairs(self.consts) do
-						expr = expr:replace(var, value)()
-					end
-					return (expr:compile(vars))
+					return compileWithConsts(Gamma[i][j][k])
 				end)
 			end)
 		end)
+	
+		self.Ricci = range(2):map(function(i)
+			return range(2):map(function(j)
+				return compileWithConsts(Ricci[i][j])
+			end)
+		end)
+
+		self.Gaussian = buildFuncs(Gaussian)
 	end
 
 	self.displayList = gl.glGenLists(1)
@@ -399,6 +506,31 @@ print('Gamma simplified', Gamma)
 	end
 	
 	gl.glEndList()				
+
+	local buf = ffi.new('float[?]', self.gaussianTex.width * self.gaussianTex.height * 4)
+	
+	local gaussianMin = math.huge
+	local gaussianMax = -math.huge
+	for i=0,self.gaussianTex.width-1 do
+		local u1value = (i+.5) / self.gaussianTex.width * (u1.max - u1.min) + u1.min
+		for j=0,self.gaussianTex.height-1 do
+			local u2value = (i+.5) / self.gaussianTex.width * (u2.max - u2.min) + u2.min
+			local R = self.Gaussian(u1value, u2value)
+			gaussianMin = math.min(gaussianMin, R)
+			gaussianMax = math.min(gaussianMax, R)
+			buf[0 + 4 * (i + self.gaussianTex.width * j)] = R
+		end
+	end
+	for i=0,self.gaussianTex.width-1 do
+		for j=0,self.gaussianTex.height-1 do
+			local index = 0 + 4 * (i + self.gaussianTex.width * j)
+			buf[index] = (buf[index] - gaussianMin) / (gaussianMax - gaussianMin)
+		end
+	end
+
+	self.gaussianTex:bind()
+	gl.glTexSubImage2D(gl.GL_TEXTURE_2D, 0, 0, 0, self.gaussianTex.width, self.gaussianTex.height, gl.GL_RGBA, gl.GL_FLOAT, buf)
+	self.gaussianTex:unbind()
 end
 			
 local mouse = Mouse()
@@ -467,7 +599,12 @@ end
 function App:updateGUI()
 	if ig.igCollapsingHeader'controls:' then
 		for i,control in ipairs(controls) do	
-			ig.igRadioButton(control, self.controlPtr, i-1)
+			ig.igRadioButton(control, self.controlPtr, i)
+		end
+	end
+	if ig.igCollapsingHeader'display' then
+		for i,display in ipairs(displays) do
+			ig.igRadioButton(display, self.displayPtr, i)
 		end
 	end
 	if ig.igCollapsingHeader'predefined:' then
@@ -565,7 +702,7 @@ function App:update()
 	mouse:update()
 	
 	if not ig.igGetIO()[0].WantCaptureKeyboard then 
-		if self.controlPtr[0] == controlIndexes.rotate-1 then
+		if self.controlPtr[0] == controlIndexes.rotate then
 			if mouse.leftDragging then
 				if leftShiftDown or rightShiftDown then
 					viewDist = viewDist * math.exp(100 * zoomFactor * mouse.deltaPos[2])
@@ -578,11 +715,11 @@ function App:update()
 					end
 				end
 			end
-		elseif self.controlPtr[0] == controlIndexes.select-1 then
+		elseif self.controlPtr[0] == controlIndexes.select then
 			if mouse.leftDown then
 				self.selectedPt = self:getCoord(mouse.pos:unpack()) or self.selectedPt
 			end	
-		elseif self.controlPtr[0] == controlIndexes.direct-1 then
+		elseif self.controlPtr[0] == controlIndexes.direct then
 			if mouse.leftDown
 			and self.selectedPt
 			then
@@ -681,8 +818,19 @@ function App:drawMesh(method)
 	gl.glTranslated(-viewPos[1], -viewPos[2], -viewPos[3])
 
 	if method == 'display' then
-		self.displayShader:use()
-		gl.glUniform2f(self.displayShader.uniforms.step.loc, params[1].step, params[2].step)
+		if self.displayPtr[0] == displayIndexes.grid then 
+			self.gridShader:use()
+			gl.glUniform2f(self.gridShader.uniforms.step.loc, params[1].step, params[2].step)
+		elseif self.displayPtr[0] == displayIndexes.Gaussian then
+			self.gradientShader:use()
+			self.gaussianTex:bind(0)
+			self.gradientTex:bind(1)
+			gl.glUniform2f(self.gradientShader.uniforms.mins.loc, params[1].min, params[2].min)
+			gl.glUniform2f(self.gradientShader.uniforms.maxs.loc, params[1].max, params[2].max)
+			self.gradientTex:unbind(1)
+			self.gaussianTex:unbind(0)
+		elseif self.displayPtr[0] == displayIndexes.Ricci then
+		end
 	elseif method == 'pick' then
 		self.pickShader:use()
 	end
