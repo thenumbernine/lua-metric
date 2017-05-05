@@ -338,8 +338,8 @@ function App:calculateMesh()
 			-- I need to make a symmath operation out of this 
 			-- pow div -> mul div
 			-- (x/2)^2 -> x^2 / 2^2
-			if symmath.powOp.is(expr)
-			and symmath.divOp.is(expr[1])
+			if symmath.op.pow.is(expr)
+			and symmath.op.div.is(expr[1])
 			then
 				if expr[2].value == 0 then
 					return 1
@@ -351,7 +351,7 @@ function App:calculateMesh()
 			end
 		end)
 		return x:map(function(expr)
-			if symmath.powOp.is(expr)
+			if symmath.op.pow.is(expr)
 			and expr[2] == symmath.Constant(2)
 			and symmath.cos.is(expr[1])
 			then
