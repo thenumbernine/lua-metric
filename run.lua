@@ -775,7 +775,7 @@ function App:update()
 		gl.glColor3f(1,1,0)
 		gl.glBegin(gl.GL_LINE_STRIP)
 		local u = self.selectedPt
-		local du_dl = self.dir
+		local du_dl = vec2(self.dir:unpack())
 		local l = .05
 		for i=1,100 do
 			u = u + du_dl * l
@@ -786,7 +786,7 @@ function App:update()
 		gl.glColor3f(1,0,1)
 		gl.glBegin(gl.GL_LINE_STRIP)
 		local u = self.selectedPt
-		local du_dl = self.dir
+		local du_dl = vec2(self.dir:unpack())
 		local dl = .05
 		for iter=1,100 do
 			-- x''^a + Gamma^a_uv x'^u x'^v = 0
