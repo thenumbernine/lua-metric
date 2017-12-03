@@ -42,7 +42,10 @@ local matrix = require 'matrix'
 local symmath = require 'symmath'
 symmath.tostring = require 'symmath.tostring.SingleLine'
 
-local App = class(ImGuiApp)
+local View = require 'glapp.view'
+local Orbit = require 'glapp.orbit'
+local App = class(Orbit(View.apply(ImGuiApp)))
+App.viewDist = 3
 
 local eqnPtr = ffi.new('int[1]', 0)
 
@@ -72,8 +75,8 @@ local options = table{
 		name = 'Cartesian',
 		consts = {},
 		vars = {'u', 'v'},
-		mins = {-2, -2},
-		maxs = {2, 2},
+		mins = {-5, -5},
+		maxs = {5, 5},
 		step = {1, 1},
 		exprs = {'u', 'v', '0'},
 	},
@@ -121,18 +124,18 @@ local options = table{
 		consts = {},
 		mins = {-1, -1},
 		maxs = {1, 1},
-		step = {1, 1},
+		step = {.2, .2},
 		vars = {'u', 'v'},
-		exprs = {'u', 'v', '-u^2 -v^2'},
+		exprs = {'u', 'v', '-.5 * (u^2 + v^2)'},
 	},
 	{
 		name = 'Hyperboloid',
 		consts = {},
 		mins = {-1, -1},
 		maxs = {1, 1},
-		step = {1, 1},
+		step = {.2, .2},
 		vars = {'u', 'v'},
-		exprs = {'u', 'v', 'u^2 - v^2'},
+		exprs = {'u', 'v', '.5 * (u^2 - v^2)'},
 	},
 }
 
@@ -151,6 +154,7 @@ end
 function App:initGL(...)
 	App.super.initGL(self, ...)
 
+	gl.glClearColor(1,1,1,1)
 	gl.glEnable(gl.GL_DEPTH_TEST)
 
 	self.gridShader = GLProgram{
@@ -179,7 +183,8 @@ void main() {
 	float i = 1. - 8. * fc.x * fc.y * (1. - fc.x) * (1. - fc.y);
 	i = pow(i, 50.);
 	
-	gl_FragColor = vec4(.25, .5, .5, 1.);
+	//gl_FragColor = vec4(.25, .5, .5, 1.);
+	gl_FragColor = vec4(1,1,1,1);
 	gl_FragColor.rgb *= 1. - i;
 	vec3 u = normalize(vertexV);
 	float l = dot(n, u);
@@ -536,7 +541,6 @@ end
 local mouse = Mouse()
 local leftShiftDown
 local rightShiftDown 
-local viewDist = 3
 local zoomFactor = .1
 local zNear = .1
 local zFar = 100
@@ -546,19 +550,27 @@ local viewScale = 1
 local viewPos = vec3()
 local viewAngle = quat()
 
-function App:event(event)
-	if ig.igGetIO()[0].WantCaptureKeyboard then return end
+function App:event(event, ...)
+	if App.super.event then
+		App.super.event(self, event, ...)
+	end
+	local canHandleMouse = not ig.igGetIO()[0].WantCaptureMouse
+	local canHandleKeyboard = not ig.igGetIO()[0].WantCaptureKeyboard
 	if event.type == sdl.SDL_MOUSEBUTTONDOWN then
-		if event.button.button == sdl.SDL_BUTTON_WHEELUP then
-			viewDist = viewDist * zoomFactor
-		elseif event.button.button == sdl.SDL_BUTTON_WHEELDOWN then
-			viewDist = viewDist / zoomFactor
+		if canHandleMouse then
+			if event.button.button == sdl.SDL_BUTTON_WHEELUP then
+				viewDist = viewDist * zoomFactor
+			elseif event.button.button == sdl.SDL_BUTTON_WHEELDOWN then
+				viewDist = viewDist / zoomFactor
+			end
 		end
 	elseif event.type == sdl.SDL_KEYDOWN or event.type == sdl.SDL_KEYUP then
-		if event.key.keysym.sym == sdl.SDLK_LSHIFT then
-			leftShiftDown = event.type == sdl.SDL_KEYDOWN
-		elseif event.key.keysym.sym == sdl.SDLK_RSHIFT then
-			rightShiftDown = event.type == sdl.SDL_KEYDOWN
+		if canHandleKeyboard then
+			if event.key.keysym.sym == sdl.SDLK_LSHIFT then
+				leftShiftDown = event.type == sdl.SDL_KEYDOWN
+			elseif event.key.keysym.sym == sdl.SDLK_RSHIFT then
+				rightShiftDown = event.type == sdl.SDL_KEYDOWN
+			end
 		end
 	end
 end
@@ -627,15 +639,15 @@ function App:updateGUI()
 			ig.igSameLine()
 			ig.igText(param.var.name)
 			local int = ffi.new('int[1]', param.divs)
-			if ig.igInputInt('divs', int) then
+			if ig.igInputInt('divs', int, 1, 100, ig.ImGuiInputTextFlags_EnterReturnsTrue) then
 				param.divs = int[0]
 			end
 			local float = ffi.new('float[1]', param.min)
-			if ig.igInputFloat('min', float) then
+			if ig.igInputFloat('min', float, 0, 0, -1, ig.ImGuiInputTextFlags_EnterReturnsTrue) then
 				param.min = float[0]
 			end
 			float[0] = param.max
-			if ig.igInputFloat('max', float) then
+			if ig.igInputFloat('max', float, 0, 0, -1, ig.ImGuiInputTextFlags_EnterReturnsTrue) then
 				param.max = float[0]
 			end
 			ig.igPopId()
@@ -678,10 +690,6 @@ function App:getCoord(mx,my)
 	self.fbo:bind()
 	self.fbo:check()
 	gl.glClear(bit.bor(gl.GL_DEPTH_BUFFER_BIT, gl.GL_COLOR_BUFFER_BIT))
-	gl.glMatrixMode(gl.GL_PROJECTION)
-	gl.glLoadIdentity()
-	local ar = self.width / self.height
-	gl.glFrustum(-zNear * ar * tanFovX, zNear * ar * tanFovX, -zNear * tanFovY, zNear * tanFovY, zNear, zFar);
 	self:drawMesh'pick'
 	local ix = math.floor(self.fbo.width * mx)
 	local iy = math.floor(self.fbo.height * my)
@@ -699,23 +707,14 @@ function App:getCoord(mx,my)
 end
 
 function App:update()		
+	gl.glClear(bit.bor(gl.GL_COLOR_BUFFER_BIT, gl.GL_DEPTH_BUFFER_BIT))
 	mouse:update()
 	
-	if not ig.igGetIO()[0].WantCaptureKeyboard then 
-		if self.controlPtr[0] == controlIndexes.rotate then
-			if mouse.leftDragging then
-				if leftShiftDown or rightShiftDown then
-					viewDist = viewDist * math.exp(100 * zoomFactor * mouse.deltaPos[2])
-				else
-					local magn = mouse.deltaPos:length() * 1000
-					if magn > 0 then
-						local normDelta = mouse.deltaPos / magn
-						local r = quat():fromAngleAxis(-normDelta[2], normDelta[1], 0, -magn)
-						viewAngle = (viewAngle * r):normalize()
-					end
-				end
-			end
-		elseif self.controlPtr[0] == controlIndexes.select then
+	local canHandleMouse = not ig.igGetIO()[0].WantCaptureMouse
+	local canHandleKeyboard = not ig.igGetIO()[0].WantCaptureKeyboard
+	
+	if canHandleMouse then 
+		if self.controlPtr[0] == controlIndexes.select then
 			if mouse.leftDown then
 				self.selectedPt = self:getCoord(mouse.pos:unpack()) or self.selectedPt
 			end	
@@ -736,17 +735,7 @@ function App:update()
 		end
 	end
 		
-	viewPos = viewAngle:zAxis() * viewDist 
-
-	gl.glViewport(0, 0, self.width, self.height)
-	gl.glClear(bit.bor(gl.GL_DEPTH_BUFFER_BIT, gl.GL_COLOR_BUFFER_BIT))
-	gl.glMatrixMode(gl.GL_PROJECTION)
-	gl.glLoadIdentity()
-	local ar = self.width / self.height
-	gl.glFrustum(-zNear * ar * tanFovX, zNear * ar * tanFovX, -zNear * tanFovY, zNear * tanFovY, zNear, zFar);
-
 	self:drawMesh'display'
-
 
 	if self.selectedPt then
 		-- draw selected coordinate
@@ -810,13 +799,6 @@ function App:update()
 end
 
 function App:drawMesh(method)
-	gl.glMatrixMode(gl.GL_MODELVIEW)
-	gl.glLoadIdentity()
-	gl.glScaled(viewScale, viewScale, viewScale)
-	local aa = viewAngle:toAngleAxis()
-	gl.glRotated(-aa[4], aa[1], aa[2], aa[3])
-	gl.glTranslated(-viewPos[1], -viewPos[2], -viewPos[3])
-
 	if method == 'display' then
 		if self.displayPtr[0] == displayIndexes.grid then 
 			self.gridShader:use()
