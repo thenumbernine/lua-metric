@@ -37,11 +37,22 @@ local GradientTex = require 'gl.gradienttex'
 local glreport = require 'gl.report'
 local FBO = require 'gl.fbo'
 local Mouse = require 'gui.mouse'
-local vec3 = require 'vec.vec3'
-local quat = require 'vec.quat'
 local matrix = require 'matrix'
 local symmath = require 'symmath'
 symmath.tostring = require 'symmath.tostring.SingleLine'
+
+function matrix:normalize()
+	return self / self:norm()
+end
+
+-- cross product, but with matrix instead of vector
+function cross(a,b)
+	return matrix{
+		a[2]*b[3] - a[3]*b[2],
+		a[3]*b[1] - a[1]*b[3],
+		a[1]*b[2] - a[2]*b[1],
+	}
+end
 
 local View = require 'glapp.view'
 local Orbit = require 'glapp.orbit'
@@ -251,16 +262,16 @@ void main() {
 --]]
 -- [[ sunset pic from https://blog.graphiq.com/finding-the-right-color-palettes-for-data-visualizations-fcd4e707a283#.inyxk2q43
 		table{
-			vec3(22,31,86),
-			vec3(34,54,152),
-			vec3(87,49,108),
-			vec3(156,48,72),
-			vec3(220,60,57),
-			vec3(254,96,50),
-			vec3(255,188,46),
-			vec3(255,255,55),
+			{22,31,86},
+			{34,54,152},
+			{87,49,108},
+			{156,48,72},
+			{220,60,57},
+			{254,96,50},
+			{255,188,46},
+			{255,255,55},
 		}:map(function(c,i)
-			return table(c/255):append{1}
+			return table(matrix(c)/255):append{1}
 		end),
 --]]
 		false)
@@ -462,7 +473,7 @@ function App:calculateMesh()
 	gl.glNewList(self.displayList, gl.GL_COMPILE)
 
 	self.getpt = function(u1value, u2value)
-		local pt = vec3()
+		local pt = matrix()
 		for i=1,3 do
 			if eqns[i] then 
 				pt[i] = eqns[i].func(u1value, u2value) 
@@ -485,9 +496,9 @@ function App:calculateMesh()
 
 	self.get_dp_du = function(...)
 		return matrix{
-			matrix{self.get_dp_du1(...):unpack()},
-			matrix{self.get_dp_du2(...):unpack()},
-		}:transpose()
+			self.get_dp_du1(...),
+			self.get_dp_du2(...),
+		}
 	end
 
 	for u1div=0,u1.divs-1 do
@@ -503,7 +514,7 @@ function App:calculateMesh()
 			
 				local dp_du = self.get_dp_du1(u1value, u2value)
 				local dp_dv = self.get_dp_du2(u1value, u2value) 
-				local n = vec3.cross(dp_du, dp_dv):normalize()
+				local n = cross(dp_du, dp_dv):normalize()
 				gl.glNormal3f(n:unpack())
 				
 				gl.glVertex3f(pt:unpack())
@@ -541,16 +552,6 @@ function App:calculateMesh()
 end
 			
 local mouse = Mouse()
-local leftShiftDown
-local rightShiftDown 
-local zoomFactor = .1
-local zNear = .1
-local zFar = 100
-local tanFovX = 1
-local tanFovY = 1
-local viewScale = 1
-local viewPos = vec3()
-local viewAngle = quat()
 
 function App:event(event, ...)
 	-- TODO disable orbit
@@ -562,25 +563,6 @@ function App:event(event, ...)
 	end
 	if self.controlPtr[0] ~= controlIndexes.rotate then
 		self.view = pushView
-	end
-	local canHandleMouse = not ig.igGetIO()[0].WantCaptureMouse
-	local canHandleKeyboard = not ig.igGetIO()[0].WantCaptureKeyboard
-	if event.type == sdl.SDL_MOUSEBUTTONDOWN then
-		if canHandleMouse then
-			if event.button.button == sdl.SDL_BUTTON_WHEELUP then
-				viewDist = viewDist * zoomFactor
-			elseif event.button.button == sdl.SDL_BUTTON_WHEELDOWN then
-				viewDist = viewDist / zoomFactor
-			end
-		end
-	elseif event.type == sdl.SDL_KEYDOWN or event.type == sdl.SDL_KEYUP then
-		if canHandleKeyboard then
-			if event.key.keysym.sym == sdl.SDLK_LSHIFT then
-				leftShiftDown = event.type == sdl.SDL_KEYDOWN
-			elseif event.key.keysym.sym == sdl.SDLK_RSHIFT then
-				rightShiftDown = event.type == sdl.SDL_KEYDOWN
-			end
-		end
 	end
 end
 
@@ -614,7 +596,7 @@ function App:setOption(option)
 		print('to',eqn.expr)
 	end
 	self:calculateMesh()
-	self.selectedPt = (vec2(table.unpack(option.mins)) + option.maxs) * .5
+	self.selectedPt = (matrix(option.mins) + matrix(option.maxs)) * .5
 end
 
 function App:updateGUI()
@@ -708,7 +690,7 @@ function App:getCoord(mx,my)
 		gl.glReadPixels(ix, iy, 1, 1, gl.GL_DEPTH_COMPONENT, gl.GL_FLOAT, depth)
 		if depth[0] < 1 then 
 			gl.glReadPixels(ix, iy, 1, 1, gl.GL_RGBA, gl.GL_FLOAT, results)
-			u = vec2(results[0],results[1])
+			u = matrix{tonumber(results[0]),tonumber(results[1])}
 		end
 	end
 	self.fbo:unbind()
@@ -734,11 +716,9 @@ function App:update()
 				local u = self:getCoord(mouse.pos:unpack())
 				if u then
 					local dir = self.getpt(u:unpack()) - self.getpt(self.selectedPt:unpack())
-					local dp_du = self.get_dp_du(u:unpack()):transpose()
-					dir = matrix{dir}:transpose()
+					local dp_du = self.get_dp_du(u:unpack())
 					local udir = dp_du * dir
-					udir = udir:transpose()[1]
-					self.dir = vec2(table.unpack(udir)):normalize()
+					self.dir = udir:normalize()
 				end	
 			end	
 		end
@@ -753,7 +733,7 @@ function App:update()
 		local pt = self.getpt(self.selectedPt:unpack())
 		local dp_du = self.get_dp_du1(self.selectedPt:unpack())
 		local dp_dv = self.get_dp_du2(self.selectedPt:unpack())
-		local n = vec3.cross(dp_du, dp_dv)
+		local n = cross(dp_du, dp_dv)
 		gl.glColor3f(1,0,0)
 		for sign=-1,1,2 do
 			gl.glBegin(gl.GL_LINE_LOOP)
@@ -773,14 +753,14 @@ function App:update()
 		gl.glColor3f(.75,.5,0)
 		for sign=-1,1,2 do
 			local u = self.selectedPt
-			local du_dl = vec2(self.dir:unpack())
+			local du_dl = matrix(self.dir)
 			local l = .05
 			gl.glBegin(gl.GL_LINE_STRIP)
 			for i=1,100 do
 				u = u + du_dl * l
 				local dp_du = self.get_dp_du1(u:unpack())
 				local dp_dv = self.get_dp_du2(u:unpack())
-				local n = vec3.cross(dp_du, dp_dv)
+				local n = cross(dp_du, dp_dv)
 				gl.glVertex3d((self.getpt(u:unpack()) + n * (.01 * sign)):unpack())
 			end
 			gl.glEnd()
@@ -789,7 +769,7 @@ function App:update()
 		gl.glColor3f(.5,0,.75)
 		for sign=-1,1,2 do
 			local u = self.selectedPt
-			local du_dl = vec2(self.dir:unpack())
+			local du_dl = matrix(self.dir)
 			local dl = .05
 			gl.glBegin(gl.GL_LINE_STRIP)
 			for iter=1,100 do
@@ -805,7 +785,7 @@ function App:update()
 				end
 				local dp_du = self.get_dp_du1(u:unpack())
 				local dp_dv = self.get_dp_du2(u:unpack())
-				local n = vec3.cross(dp_du, dp_dv)
+				local n = cross(dp_du, dp_dv)
 				gl.glVertex3d((self.getpt(u:unpack()) + n * (.01 * sign)):unpack())
 			end
 			gl.glEnd()
