@@ -34,6 +34,7 @@ local sdl = require 'ffi.sdl'
 local GLProgram = require 'gl.program'
 local GLTex2D = require 'gl.tex2d'
 local GradientTex = require 'gl.gradienttex'
+local glreport = require 'gl.report'
 local FBO = require 'gl.fbo'
 local Mouse = require 'gui.mouse'
 local vec3 = require 'vec.vec3'
@@ -46,6 +47,7 @@ local View = require 'glapp.view'
 local Orbit = require 'glapp.orbit'
 local App = class(Orbit(View.apply(ImGuiApp)))
 App.viewDist = 3
+App.title = 'Metric Visualization'
 
 local eqnPtr = ffi.new('int[1]', 0)
 
@@ -304,7 +306,7 @@ void main() {
 	}
 	self.fbo:setColorAttachmentTex2D(0, self.floatTex.id)
 	self.fbo:bind()
-	self.fbo:check()
+	assert(self.fbo:check())
 	self.fbo:unbind()
 
 	self.ricciTex = makeFloatTex()
@@ -551,8 +553,15 @@ local viewPos = vec3()
 local viewAngle = quat()
 
 function App:event(event, ...)
+	-- TODO disable orbit
+	if self.controlPtr[0] ~= controlIndexes.rotate then
+		pushView = View(self.view)
+	end
 	if App.super.event then
 		App.super.event(self, event, ...)
+	end
+	if self.controlPtr[0] ~= controlIndexes.rotate then
+		self.view = pushView
 	end
 	local canHandleMouse = not ig.igGetIO()[0].WantCaptureMouse
 	local canHandleKeyboard = not ig.igGetIO()[0].WantCaptureKeyboard
@@ -688,7 +697,7 @@ function App:getCoord(mx,my)
 	local depth = ffi.new'float[1]'
 	gl.glViewport(0, 0, self.fbo.width, self.fbo.height)
 	self.fbo:bind()
-	self.fbo:check()
+	assert(self.fbo:check())
 	gl.glClear(bit.bor(gl.GL_DEPTH_BUFFER_BIT, gl.GL_COLOR_BUFFER_BIT))
 	self:drawMesh'pick'
 	local ix = math.floor(self.fbo.width * mx)
@@ -703,11 +712,11 @@ function App:getCoord(mx,my)
 		end
 	end
 	self.fbo:unbind()
+	gl.glViewport(0, 0, self.width, self.height)
 	return u
 end
 
 function App:update()		
-	gl.glClear(bit.bor(gl.GL_COLOR_BUFFER_BIT, gl.GL_DEPTH_BUFFER_BIT))
 	mouse:update()
 	
 	local canHandleMouse = not ig.igGetIO()[0].WantCaptureMouse
@@ -734,7 +743,9 @@ function App:update()
 			end	
 		end
 	end
-		
+	
+	gl.glClear(bit.bor(gl.GL_COLOR_BUFFER_BIT, gl.GL_DEPTH_BUFFER_BIT))
+	self.view:setupProjection(self.width / self.height)
 	self:drawMesh'display'
 
 	if self.selectedPt then
@@ -743,7 +754,7 @@ function App:update()
 		local dp_du = self.get_dp_du1(self.selectedPt:unpack())
 		local dp_dv = self.get_dp_du2(self.selectedPt:unpack())
 		local n = vec3.cross(dp_du, dp_dv)
-		gl.glColor3f(1,1,1)
+		gl.glColor3f(1,0,0)
 		for sign=-1,1,2 do
 			gl.glBegin(gl.GL_LINE_LOOP)
 			for i=1,100 do
@@ -758,47 +769,56 @@ function App:update()
 		end
 	end
 	
-	gl.glDisable(gl.GL_DEPTH_TEST)
-	
 	if self.dir then
-		gl.glColor3f(1,1,0)
-		gl.glBegin(gl.GL_LINE_STRIP)
-		local u = self.selectedPt
-		local du_dl = vec2(self.dir:unpack())
-		local l = .05
-		for i=1,100 do
-			u = u + du_dl * l
-			gl.glVertex3d(self.getpt(u:unpack()):unpack())
+		gl.glColor3f(.75,.5,0)
+		for sign=-1,1,2 do
+			local u = self.selectedPt
+			local du_dl = vec2(self.dir:unpack())
+			local l = .05
+			gl.glBegin(gl.GL_LINE_STRIP)
+			for i=1,100 do
+				u = u + du_dl * l
+				local dp_du = self.get_dp_du1(u:unpack())
+				local dp_dv = self.get_dp_du2(u:unpack())
+				local n = vec3.cross(dp_du, dp_dv)
+				gl.glVertex3d((self.getpt(u:unpack()) + n * (.01 * sign)):unpack())
+			end
+			gl.glEnd()
 		end
-		gl.glEnd()
-	
-		gl.glColor3f(1,0,1)
-		gl.glBegin(gl.GL_LINE_STRIP)
-		local u = self.selectedPt
-		local du_dl = vec2(self.dir:unpack())
-		local dl = .05
-		for iter=1,100 do
-			-- x''^a + Gamma^a_uv x'^u x'^v = 0
-			-- x''^a = -Gamma^a_uv x'^u x'^v
-			u = u + du_dl * dl
-			for i=1,2 do
-				for j=1,2 do
-					for k=1,2 do
-						du_dl[i] = du_dl[i] - self.Gamma[i][j][k](u[1], u[2]) * du_dl[j] * du_dl[k] * dl
+
+		gl.glColor3f(.5,0,.75)
+		for sign=-1,1,2 do
+			local u = self.selectedPt
+			local du_dl = vec2(self.dir:unpack())
+			local dl = .05
+			gl.glBegin(gl.GL_LINE_STRIP)
+			for iter=1,100 do
+				-- x''^a + Gamma^a_uv x'^u x'^v = 0
+				-- x''^a = -Gamma^a_uv x'^u x'^v
+				u = u + du_dl * dl
+				for i=1,2 do
+					for j=1,2 do
+						for k=1,2 do
+							du_dl[i] = du_dl[i] - self.Gamma[i][j][k](u[1], u[2]) * du_dl[j] * du_dl[k] * dl
+						end
 					end
 				end
+				local dp_du = self.get_dp_du1(u:unpack())
+				local dp_dv = self.get_dp_du2(u:unpack())
+				local n = vec3.cross(dp_du, dp_dv)
+				gl.glVertex3d((self.getpt(u:unpack()) + n * (.01 * sign)):unpack())
 			end
-			gl.glVertex3d(self.getpt(u:unpack()):unpack())
+			gl.glEnd()
 		end
-		gl.glEnd()
 	end
-	
-	gl.glEnable(gl.GL_DEPTH_TEST)
 
 	App.super.update(self)
+
+	glreport'here'
 end
 
 function App:drawMesh(method)
+	self.view:setupModelView()
 	if method == 'display' then
 		if self.displayPtr[0] == displayIndexes.grid then 
 			self.gridShader:use()
