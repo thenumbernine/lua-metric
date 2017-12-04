@@ -351,33 +351,6 @@ function App:calculateMesh()
 		eqn.func = compileWithConsts(eqn.expr)
 	end
 
-	local function simplifyTrig(x)
-		x = x:map(function(expr)
-			-- I need to make a symmath operation out of this 
-			-- pow div -> mul div
-			-- (x/2)^2 -> x^2 / 2^2
-			if symmath.op.pow.is(expr)
-			and symmath.op.div.is(expr[1])
-			then
-				if expr[2].value == 0 then
-					return 1
-				else
-					local num = (symmath.clone(expr[1][1])^symmath.clone(expr[2]))()
-					local denom = (symmath.clone(expr[1][2])^symmath.clone(expr[2]))() 
-					return (num / denom)()
-				end
-			end
-		end)
-		return x:map(function(expr)
-			if symmath.op.pow.is(expr)
-			and expr[2] == symmath.Constant(2)
-			and symmath.cos.is(expr[1])
-			then
-				return 1 - symmath.sin(expr[1][1]:clone())^2
-			end
-		end)()
-	end
-
 	do
 		local x,y,z = symmath.vars('x','y','z')
 		local flatCoords = {x,y,z}
@@ -394,14 +367,11 @@ function App:calculateMesh()
 		local e = Tensor'_u^I'
 		e['_u^I'] = p'^I_,u'()
 		local g = (e'_u^I' * e'_v^J' * eta'_IJ')()
-		g = simplifyTrig(g)
 		Tensor.metric(g)
 		local dg = Tensor'_uvw'
 		dg['_uvw'] = g'_uv,w'()
-		dg = simplifyTrig(dg)
 		local Gamma = ((dg'_uvw' + dg'_uwv' - dg'_vwu')/2)()
 		Gamma = Gamma'^u_vw'()
-		Gamma = simplifyTrig(Gamma)
 		
 		local dGamma = Tensor'^a_bcd'
 		dGamma['^a_bcd'] = Gamma'^a_bc,d'()
@@ -442,31 +412,17 @@ function App:calculateMesh()
 			print(str)
 		end
 
-		local function buildFuncs(expr)
-			if symmath.Tensor.is(expr) then
-				return range(#expr):map(function(i)
-					return buildFuncs(expr[i])
-				end)
-			else
-				return compileWithConsts(expr)
-			end
+		local func_Gamma = compileWithConsts(Gamma)
+		self.Gamma = function(...)
+			return matrix(func_Gamma(...))
 		end
 
-		self.Gamma = range(2):map(function(i)
-			return range(2):map(function(j)
-				return range(2):map(function(k)
-					return compileWithConsts(Gamma[i][j][k])
-				end)
-			end)
-		end)
-	
-		self.Ricci = range(2):map(function(i)
-			return range(2):map(function(j)
-				return compileWithConsts(Ricci[i][j])
-			end)
-		end)
+		local func_Ricci = compileWithConsts(Ricci)
+		self.Ricci = function(...) 
+			return matrix(func_Ricci(...)) 
+		end
 
-		self.Gaussian = buildFuncs(Gaussian)
+		self.Gaussian = compileWithConsts(Gaussian)
 	end
 
 	self.displayList = gl.glGenLists(1)
@@ -776,13 +732,7 @@ function App:update()
 				-- x''^a + Gamma^a_uv x'^u x'^v = 0
 				-- x''^a = -Gamma^a_uv x'^u x'^v
 				u = u + du_dl * dl
-				for i=1,2 do
-					for j=1,2 do
-						for k=1,2 do
-							du_dl[i] = du_dl[i] - self.Gamma[i][j][k](u[1], u[2]) * du_dl[j] * du_dl[k] * dl
-						end
-					end
-				end
+				du_dl = du_dl - self.Gamma(u:unpack()) * du_dl * du_dl * dl
 				local dp_du = self.get_dp_du1(u:unpack())
 				local dp_dv = self.get_dp_du2(u:unpack())
 				local n = cross(dp_du, dp_dv)
