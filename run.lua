@@ -161,6 +161,7 @@ local displayIndexes = displays:map(function(v,k) return k,v end)
 function App:init(...)
 	App.super.init(self, ...)
 
+	self.dir = matrix{0,0}
 	self.consts = {}
 end
 
@@ -496,8 +497,6 @@ function App:calculateMesh()
 			buf[index] = R
 		end
 	end
-print('Gaussian min', gaussianMin)
-print('Gaussian max', gaussianMax)
 	if gaussianMax - gaussianMin < 1e-10 then
 		gaussianMax = gaussianMin + 1e-10
 	end
@@ -512,6 +511,41 @@ print('Gaussian max', gaussianMax)
 	gl.glTexSubImage2D(gl.GL_TEXTURE_2D, 0, 0, 0, self.gaussianTex.width, self.gaussianTex.height, gl.GL_RGBA, gl.GL_FLOAT, buf)
 	self.gaussianTex:unbind()
 	glreport'here'
+
+	self:updateRicciTex()
+end
+
+function App:updateRicciTex()
+	local u1, u2 = params:unpack()
+	local buf = ffi.new('float[?]', self.gaussianTex.width * self.gaussianTex.height * 4)
+	local ricciMin = math.huge
+	local ricciMax = -math.huge
+	for i=0,self.ricciTex.width-1 do
+		local u1value = (i+.5) / self.ricciTex.width * (u1.max - u1.min) + u1.min
+		for j=0,self.ricciTex.height-1 do
+			local index = 0 + 4 * (i + self.ricciTex.width * j)
+			local u2value = (j+.5) / self.ricciTex.height * (u2.max - u2.min) + u2.min
+			local R = self.Ricci(u1value, u2value) * self.dir * self.dir
+			ricciMin = math.min(ricciMin, R)
+			ricciMax = math.max(ricciMax, R)
+			buf[index] = R
+		end
+	end
+	if ricciMax - ricciMin < 1e-10 then
+		ricciMax = ricciMin + 1e-10
+	end
+	for i=0,self.ricciTex.width-1 do
+		for j=0,self.ricciTex.height-1 do
+			local index = 0 + 4 * (i + self.ricciTex.width * j)
+			buf[index] = (buf[index] - ricciMin) / (ricciMax - ricciMin)
+		end
+	end
+
+	self.ricciTex:bind()
+	gl.glTexSubImage2D(gl.GL_TEXTURE_2D, 0, 0, 0, self.ricciTex.width, self.ricciTex.height, gl.GL_RGBA, gl.GL_FLOAT, buf)
+	self.ricciTex:unbind()
+	glreport'here'
+
 end
 			
 local mouse = Mouse()
@@ -682,7 +716,14 @@ function App:update()
 					local dp_du = self.get_dp_du(u:unpack())
 					local udir = dp_du * dir
 					self.dir = udir:normalize()
-				end	
+					-- if we change dir and are showing ricci curvature then update the mesh
+					-- TODO do this in GPU
+					-- but that means finding the min/max in GPU as well
+					-- which isn't so tough ... just do a FBO reduce (might be easier in OpenCL)
+					if self.displayPtr[0] == displayIndexes.Ricci then
+						self:updateRicciTex()
+					end
+				end
 			end	
 		end
 	end
@@ -767,6 +808,11 @@ function App:drawMesh(method)
 			gl.glUniform2f(self.gradientShader.uniforms.mins.loc, params[1].min, params[2].min)
 			gl.glUniform2f(self.gradientShader.uniforms.maxs.loc, params[1].max, params[2].max)
 		elseif self.displayPtr[0] == displayIndexes.Ricci then
+			self.gradientShader:use()
+			self.ricciTex:bind(0)
+			self.gradientTex:bind(1)
+			gl.glUniform2f(self.gradientShader.uniforms.mins.loc, params[1].min, params[2].min)
+			gl.glUniform2f(self.gradientShader.uniforms.maxs.loc, params[1].max, params[2].max)
 		end
 	elseif method == 'pick' then
 		self.pickShader:use()
