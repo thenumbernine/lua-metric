@@ -9,6 +9,6 @@ TODO
 
 ![Gaussian curvature of a torus](images/gaussian.png)
 
-![Ricci curvature on a hyperboloid in one direction](images/ricci 1.png)
+![Ricci curvature on a hyperboloid in one direction](images/ricci%201.png)
 
-![Ricci curvature on a hyperboloid in the other direction](images/ricci 2.png)
+![Ricci curvature on a hyperboloid in the other direction](images/ricci%202.png)
