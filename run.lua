@@ -94,7 +94,7 @@ local options = table{
 		exprs = {'u', 'v', '0'},
 	},
 	{
-		name = 'Spherical',
+		name = 'Sphere',
 		consts = {r=1},
 		mins = {0, -math.pi},
 		maxs = {math.pi, math.pi},
@@ -172,7 +172,7 @@ function App:initGL(...)
 
 	self.gridShader = GLProgram{
 		vertexCode = [[
-varying vec2 intCoordV;
+varying vec2 gridCoord;
 varying vec3 normalV;
 varying vec3 vertexV;
 void main() {
@@ -180,11 +180,11 @@ void main() {
 	vec4 mvtx = gl_ModelViewMatrix * gl_Vertex;
 	vertexV = mvtx.xyz;
 	gl_Position = gl_ProjectionMatrix * mvtx;
-	intCoordV = gl_MultiTexCoord0.st;
+	gridCoord = gl_MultiTexCoord0.st;
 }
 ]],
 		fragmentCode = [[
-varying vec2 intCoordV;
+varying vec2 gridCoord;
 varying vec3 normalV;
 varying vec3 vertexV;
 uniform vec2 step;
@@ -192,7 +192,7 @@ void main() {
 	vec3 n = normalize(normalV);
 	if (n.z < 0.) n = -n;	//backface lighting
 	
-	vec2 fc = mod(intCoordV.xy / step, 1.); //grid
+	vec2 fc = mod(gridCoord.xy / step, 1.); //grid
 	float i = 1. - 8. * fc.x * fc.y * (1. - fc.x) * (1. - fc.y);
 	i = pow(i, 50.);
 	
@@ -208,35 +208,35 @@ void main() {
 
 	self.pickShader = GLProgram{
 		vertexCode = [[
-varying vec2 intCoordV;
+varying vec2 gridCoord;
 void main() {
 	gl_Position = ftransform();
-	intCoordV = gl_MultiTexCoord0.st;
+	gridCoord = gl_MultiTexCoord0.st;
 }
 ]],
 		fragmentCode = [[
-varying vec2 intCoordV;
+varying vec2 gridCoord;
 void main() {
-	gl_FragColor = vec4(intCoordV, 0., 1.);
+	gl_FragColor = vec4(gridCoord, 0., 1.);
 }
 ]],
 	}
 
 	self.gradientShader = GLProgram{
 		vertexCode = [[
-varying vec2 intCoordV;
+varying vec2 gridCoord;
 void main() {
 	gl_Position = ftransform();
-	intCoordV = gl_MultiTexCoord0.st;
+	gridCoord = gl_MultiTexCoord0.st;
 }
 ]],
 		fragmentCode = [[
-varying vec2 intCoordV;
+varying vec2 gridCoord;
 uniform sampler2D tex;
 uniform sampler2D gradientTex;
 uniform vec2 mins, maxs;
 void main() {
-	vec2 tc = (intCoordV - mins) / (maxs - mins);
+	vec2 tc = (gridCoord - mins) / (maxs - mins);
 	float value = texture2D(tex, tc).r;
 	gl_FragColor = texture2D(gradientTex, vec2(value, .5));
 }
@@ -299,8 +299,8 @@ void main() {
 
 	local function makeFloatTex()
 		return GLTex2D{
-			width = 2048,
-			height = 2048,
+			width = 256,
+			height = 256,
 			internalFormat = gl.GL_RGBA32F,
 			format = gl.GL_RGBA,
 			type = gl.GL_FLOAT,
@@ -488,12 +488,18 @@ function App:calculateMesh()
 	for i=0,self.gaussianTex.width-1 do
 		local u1value = (i+.5) / self.gaussianTex.width * (u1.max - u1.min) + u1.min
 		for j=0,self.gaussianTex.height-1 do
-			local u2value = (i+.5) / self.gaussianTex.width * (u2.max - u2.min) + u2.min
+			local index = 0 + 4 * (i + self.gaussianTex.width * j)
+			local u2value = (j+.5) / self.gaussianTex.height * (u2.max - u2.min) + u2.min
 			local R = self.Gaussian(u1value, u2value)
 			gaussianMin = math.min(gaussianMin, R)
-			gaussianMax = math.min(gaussianMax, R)
-			buf[0 + 4 * (i + self.gaussianTex.width * j)] = R
+			gaussianMax = math.max(gaussianMax, R)
+			buf[index] = R
 		end
+	end
+print('Gaussian min', gaussianMin)
+print('Gaussian max', gaussianMax)
+	if gaussianMax - gaussianMin < 1e-10 then
+		gaussianMax = gaussianMin + 1e-10
 	end
 	for i=0,self.gaussianTex.width-1 do
 		for j=0,self.gaussianTex.height-1 do
@@ -505,6 +511,7 @@ function App:calculateMesh()
 	self.gaussianTex:bind()
 	gl.glTexSubImage2D(gl.GL_TEXTURE_2D, 0, 0, 0, self.gaussianTex.width, self.gaussianTex.height, gl.GL_RGBA, gl.GL_FLOAT, buf)
 	self.gaussianTex:unbind()
+	glreport'here'
 end
 			
 local mouse = Mouse()
@@ -759,14 +766,14 @@ function App:drawMesh(method)
 			self.gradientTex:bind(1)
 			gl.glUniform2f(self.gradientShader.uniforms.mins.loc, params[1].min, params[2].min)
 			gl.glUniform2f(self.gradientShader.uniforms.maxs.loc, params[1].max, params[2].max)
-			self.gradientTex:unbind(1)
-			self.gaussianTex:unbind(0)
 		elseif self.displayPtr[0] == displayIndexes.Ricci then
 		end
 	elseif method == 'pick' then
 		self.pickShader:use()
 	end
 	gl.glCallList(self.displayList)
+	GLTex2D:unbind(1)
+	GLTex2D:unbind(0)
 	GLProgram:useNone()
 end
 
