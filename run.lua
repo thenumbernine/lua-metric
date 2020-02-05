@@ -36,10 +36,9 @@ local GLTex2D = require 'gl.tex2d'
 local GradientTex = require 'gl.gradienttex'
 local glreport = require 'gl.report'
 local FBO = require 'gl.fbo'
-local Mouse = require 'gui.mouse'
 local matrix = require 'matrix'
 local symmath = require 'symmath'
-symmath.tostring = require 'symmath.tostring.SingleLine'
+symmath.tostring = require 'symmath.export.SingleLine'
 
 function matrix:normalize()
 	return self / self:norm()
@@ -56,6 +55,8 @@ end
 
 local View = require 'glapp.view'
 local Orbit = require 'glapp.orbit'
+local Mouse = require 'glapp.mouse'
+
 local App = class(Orbit(View.apply(ImGuiApp)))
 App.viewDist = 3
 App.title = 'Metric Visualization'
