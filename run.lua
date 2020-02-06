@@ -25,7 +25,6 @@ x''^i + Gamma^i_jk x'^j x'^k = 0
 *) Ricci curvature at each point, for a given direction u^a :  R_ab u^a u^b
 --]]
 require 'ext'
-local ImGuiApp = require 'imguiapp'
 local bit = require 'bit'
 local ffi = require 'ffi'
 local ig = require 'ffi.imgui'
@@ -54,10 +53,8 @@ function cross(a,b)
 end
 
 local View = require 'glapp.view'
-local Orbit = require 'glapp.orbit'
-local Mouse = require 'glapp.mouse'
 
-local App = class(Orbit(View.apply(ImGuiApp)))
+local App = class(require 'glapp.orbit'(require 'imguiapp'))
 App.viewDist = 3
 App.title = 'Metric Visualization'
 
@@ -548,8 +545,6 @@ function App:updateRicciTex()
 	glreport'here'
 
 end
-			
-local mouse = Mouse()
 
 function App:event(event, ...)
 	-- TODO disable orbit
@@ -697,21 +692,19 @@ function App:getCoord(mx,my)
 end
 
 function App:update()		
-	mouse:update()
-	
 	local canHandleMouse = not ig.igGetIO()[0].WantCaptureMouse
 	local canHandleKeyboard = not ig.igGetIO()[0].WantCaptureKeyboard
 	
 	if canHandleMouse then 
 		if self.controlPtr[0] == controlIndexes.select then
-			if mouse.leftDown then
-				self.selectedPt = self:getCoord(mouse.pos:unpack()) or self.selectedPt
+			if self.mouse.leftDown then
+				self.selectedPt = self:getCoord(self.mouse.pos:unpack()) or self.selectedPt
 			end	
 		elseif self.controlPtr[0] == controlIndexes.direct then
-			if mouse.leftDown
+			if self.mouse.leftDown
 			and self.selectedPt
 			then
-				local u = self:getCoord(mouse.pos:unpack())
+				local u = self:getCoord(self.mouse.pos:unpack())
 				if u then
 					local dir = self.getpt(u:unpack()) - self.getpt(self.selectedPt:unpack())
 					local dp_du = self.get_dp_du(u:unpack())
