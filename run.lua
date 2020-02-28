@@ -595,12 +595,12 @@ end
 function App:updateGUI()
 	if ig.igCollapsingHeader'controls:' then
 		for i,control in ipairs(controls) do	
-			ig.igRadioButton(control, self.controlPtr, i)
+			ig.igRadioButtonIntPtr(control, self.controlPtr, i)
 		end
 	end
 	if ig.igCollapsingHeader'display' then
 		for i,display in ipairs(displays) do
-			ig.igRadioButton(display, self.displayPtr, i)
+			ig.igRadioButtonIntPtr(display, self.displayPtr, i)
 		end
 	end
 	if ig.igCollapsingHeader'predefined:' then
@@ -613,7 +613,7 @@ function App:updateGUI()
 	if ig.igCollapsingHeader'parameters:' then
 		local remove
 		for i,param in ipairs(params) do
-			ig.igPushIdStr('parameter '..i)
+			ig.igPushIDStr('parameter '..i)
 			--[[ 2D only for now
 			if ig.igButton'-' then
 				remove = remove or table()
@@ -627,14 +627,14 @@ function App:updateGUI()
 				param.divs = int[0]
 			end
 			local float = ffi.new('float[1]', param.min)
-			if ig.igInputFloat('min', float, 0, 0, -1, ig.ImGuiInputTextFlags_EnterReturnsTrue) then
+			if ig.igInputFloat('min', float, 0, 0, '%.3f', ig.ImGuiInputTextFlags_EnterReturnsTrue) then
 				param.min = float[0]
 			end
 			float[0] = param.max
-			if ig.igInputFloat('max', float, 0, 0, -1, ig.ImGuiInputTextFlags_EnterReturnsTrue) then
+			if ig.igInputFloat('max', float, 0, 0, '%.3f', ig.ImGuiInputTextFlags_EnterReturnsTrue) then
 				param.max = float[0]
 			end
-			ig.igPopId()
+			ig.igPopID()
 		end
 		if remove then
 			for i=#remove,1,-1 do
@@ -645,14 +645,14 @@ function App:updateGUI()
 	if ig.igCollapsingHeader'equations:' then
 		local remove
 		for i,eqn in ipairs(eqns) do
-			ig.igPushIdStr('equation '..i)
+			ig.igPushIDStr('equation '..i)
 			if ig.igButton'-' then
 				remove = remove or table()
 				remove:insert(i)
 			end
 			ig.igSameLine()
 			ig.igText(eqn.name..' = '..eqn.expr)
-			ig.igPopId()
+			ig.igPopID()
 		end
 		if remove then
 			for i=#remove,1,-1 do
