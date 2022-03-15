@@ -3,6 +3,8 @@
 
 what to visualize?
 
+*) partial derivatives: show chart^I(x^b + lambda v^b)
+
 *) Geodesics:
 
 x^i_;j v^j = x^i_,j v^j + Gamma^i_jk x^j v^k = 0
@@ -12,17 +14,22 @@ u^i_;j u^j = u^i_,j u^j + Gamma^i_jk u^j u^k = 0
 
 let du/ds = D_u u^i = u^i_;j u^j
 
-x''^i + Gamma^i_jk x'^j x'^k = 0
-x''^i + Gamma^i_jk x'^j x'^k = 0
+x''^i = -Gamma^i_jk x'^j x'^k
 
 *) connections - via two vectors, for a basis, in a direction, show Gamma^i_jk u^i v^j
 
+TODO:
 *) geodesic deviation - [D_c, D_d] v^a = R^a_bcd v^b	<- choose vector v^a, then has freedom c & d
 				<- or choose v^a, m^c, n^d, and show R^a_bcd v^b m^c n^d
 
 *) Gaussian curvature at each point
 
 *) Ricci curvature at each point, for a given direction u^a :  R_ab u^a u^b
+
+TODO:
+*) Ricci curvature at each point, for two given directions: R_ab u^a u^b
+
+*) parallel propagation between two points
 --]]
 require 'ext'
 local bit = require 'bit'
