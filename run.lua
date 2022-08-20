@@ -285,7 +285,6 @@ void main() {
 	local data = ffi.new('unsigned char[?]', hsvWidth*4)
 	gl.glGetTexImage(gl.GL_TEXTURE_1D, 0, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE, data)
 	self.gradientTex:unbind()
-	self.gradientTex:delete()
 	self.gradientTex = GLTex2D{
 		internalFormat = gl.GL_RGBA,
 		width = hsvWidth,
@@ -362,18 +361,16 @@ function App:calculateMesh()
 		local flatCoords = {x,y,z}
 		local curvedCoords = vars
 		local Tensor = symmath.Tensor
-		Tensor.coords{
-			{variables=flatCoords, symbols='IJKLMN'},
-			{variables=curvedCoords},
-		}
+		local flatChart = Tensor.Chart{coords=flatCoords, symbols='IJKLMN'}
+		local chart = Tensor.Chart{coords=curvedCoords}
 		local eta = Tensor('_IJ', {1,0,0},{0,1,0},{0,0,1})
-		Tensor.metric(eta, eta, 'I')
+		flatChart:setMetric(eta, eta, 'I')
 
 		local p = Tensor('^I', eqns:map(function(eqn) return eqn.expr end):unpack())
 		local e = Tensor'_u^I'
 		e['_u^I'] = p'^I_,u'()
 		local g = (e'_u^I' * e'_v^J' * eta'_IJ')()
-		Tensor.metric(g)
+		chart:setMetric(g)
 		local dg = Tensor'_uvw'
 		dg['_uvw'] = g'_uv,w'()
 		local Gamma = ((dg'_uvw' + dg'_uwv' - dg'_vwu')/2)()
@@ -388,7 +385,7 @@ function App:calculateMesh()
 		local Gaussian = Ricci'^a_a'()
 
 		local function addStrs(name, expr)
-			if symmath.Tensor.is(expr) then
+			if symmath.Tensor:isa(expr) then
 				local any
 				for k,v in expr:iter() do
 					if v ~= symmath.Constant(0) then
@@ -602,12 +599,12 @@ end
 function App:updateGUI()
 	if ig.igCollapsingHeader'controls:' then
 		for i,control in ipairs(controls) do	
-			ig.igRadioButtonIntPtr(control, self.controlPtr, i)
+			ig.igRadioButton_IntPtr(control, self.controlPtr, i)
 		end
 	end
 	if ig.igCollapsingHeader'display' then
 		for i,display in ipairs(displays) do
-			ig.igRadioButtonIntPtr(display, self.displayPtr, i)
+			ig.igRadioButton_IntPtr(display, self.displayPtr, i)
 		end
 	end
 	if ig.igCollapsingHeader'predefined:' then
@@ -620,7 +617,7 @@ function App:updateGUI()
 	if ig.igCollapsingHeader'parameters:' then
 		local remove
 		for i,param in ipairs(params) do
-			ig.igPushIDStr('parameter '..i)
+			ig.igPushID_Str('parameter '..i)
 			--[[ 2D only for now
 			if ig.igButton'-' then
 				remove = remove or table()
@@ -652,7 +649,7 @@ function App:updateGUI()
 	if ig.igCollapsingHeader'equations:' then
 		local remove
 		for i,eqn in ipairs(eqns) do
-			ig.igPushIDStr('equation '..i)
+			ig.igPushID_Str('equation '..i)
 			if ig.igButton'-' then
 				remove = remove or table()
 				remove:insert(i)
