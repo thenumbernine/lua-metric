@@ -65,7 +65,6 @@ local App = class(require 'glapp.orbit'(require 'imguiapp'))
 App.viewDist = 3
 App.title = 'Metric Visualization'
 
-local eqnPtr = ffi.new('int[1]', 0)
 
 --[[
 TODO higher dimension parameters: u,v,w ... what about 4d?  stuv?
@@ -330,8 +329,8 @@ void main() {
 
 	self:setOption(options[1])
 	
-	self.controlPtr = ffi.new('int[1]', controlIndexes.rotate)
-	self.displayPtr = ffi.new('int[1]', displayIndexes.grid)
+	self.controlPtr = controlIndexes.rotate
+	self.displayPtr = displayIndexes.grid
 end
 
 function App:calculateMesh()
@@ -552,13 +551,13 @@ end
 
 function App:event(event, ...)
 	-- TODO disable orbit
-	if self.controlPtr[0] ~= controlIndexes.rotate then
+	if self.controlPtr ~= controlIndexes.rotate then
 		pushView = View(self.view)
 	end
 	if App.super.event then
 		App.super.event(self, event, ...)
 	end
-	if self.controlPtr[0] ~= controlIndexes.rotate then
+	if self.controlPtr ~= controlIndexes.rotate then
 		self.view = pushView
 	end
 end
@@ -599,12 +598,12 @@ end
 function App:updateGUI()
 	if ig.igCollapsingHeader'controls:' then
 		for i,control in ipairs(controls) do	
-			ig.igRadioButton_IntPtr(control, self.controlPtr, i)
+			ig.luatableRadioButton(control, self, 'controlPtr', i)
 		end
 	end
 	if ig.igCollapsingHeader'display' then
 		for i,display in ipairs(displays) do
-			ig.igRadioButton_IntPtr(display, self.displayPtr, i)
+			ig.luatableRadioButton(display, self, 'displayPtr', i)
 		end
 	end
 	if ig.igCollapsingHeader'predefined:' then
@@ -626,18 +625,9 @@ function App:updateGUI()
 			--]]
 			ig.igSameLine()
 			ig.igText(param.var.name)
-			local int = ffi.new('int[1]', param.divs)
-			if ig.igInputInt('divs', int, 1, 100, ig.ImGuiInputTextFlags_EnterReturnsTrue) then
-				param.divs = int[0]
-			end
-			local float = ffi.new('float[1]', param.min)
-			if ig.igInputFloat('min', float, 0, 0, '%.3f', ig.ImGuiInputTextFlags_EnterReturnsTrue) then
-				param.min = float[0]
-			end
-			float[0] = param.max
-			if ig.igInputFloat('max', float, 0, 0, '%.3f', ig.ImGuiInputTextFlags_EnterReturnsTrue) then
-				param.max = float[0]
-			end
+			ig.luatableInputInt('divs', param, 'divs', 1, 100, ig.ImGuiInputTextFlags_EnterReturnsTrue)
+			ig.luatableInputFloat('min', param, 'min', 0, 0, '%.3f', ig.ImGuiInputTextFlags_EnterReturnsTrue)
+			ig.luatableInputFloat('max', param, 'max', 0, 0, '%.3f', ig.ImGuiInputTextFlags_EnterReturnsTrue)
 			ig.igPopID()
 		end
 		if remove then
@@ -700,11 +690,11 @@ function App:update()
 	local canHandleKeyboard = not ig.igGetIO()[0].WantCaptureKeyboard
 	
 	if canHandleMouse then 
-		if self.controlPtr[0] == controlIndexes.select then
+		if self.controlPtr == controlIndexes.select then
 			if self.mouse.leftDown then
 				self.selectedPt = self:getCoord(self.mouse.pos:unpack()) or self.selectedPt
 			end	
-		elseif self.controlPtr[0] == controlIndexes.direct then
+		elseif self.controlPtr == controlIndexes.direct then
 			if self.mouse.leftDown
 			and self.selectedPt
 			then
@@ -718,7 +708,7 @@ function App:update()
 					-- TODO do this in GPU
 					-- but that means finding the min/max in GPU as well
 					-- which isn't so tough ... just do a FBO reduce (might be easier in OpenCL)
-					if self.displayPtr[0] == displayIndexes.Ricci then
+					if self.displayPtr == displayIndexes.Ricci then
 						self:updateRicciTex()
 					end
 				end
@@ -796,16 +786,16 @@ end
 function App:drawMesh(method)
 	self.view:setupModelView()
 	if method == 'display' then
-		if self.displayPtr[0] == displayIndexes.grid then 
+		if self.displayPtr == displayIndexes.grid then 
 			self.gridShader:use()
 			gl.glUniform2f(self.gridShader.uniforms.step.loc, params[1].step, params[2].step)
-		elseif self.displayPtr[0] == displayIndexes.Gaussian then
+		elseif self.displayPtr == displayIndexes.Gaussian then
 			self.gradientShader:use()
 			self.gaussianTex:bind(0)
 			self.gradientTex:bind(1)
 			gl.glUniform2f(self.gradientShader.uniforms.mins.loc, params[1].min, params[2].min)
 			gl.glUniform2f(self.gradientShader.uniforms.maxs.loc, params[1].max, params[2].max)
-		elseif self.displayPtr[0] == displayIndexes.Ricci then
+		elseif self.displayPtr == displayIndexes.Ricci then
 			self.gradientShader:use()
 			self.ricciTex:bind(0)
 			self.gradientTex:bind(1)
