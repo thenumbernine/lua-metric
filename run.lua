@@ -282,7 +282,7 @@ void main() {
 		false)
 	-- change to 2D so imgui can use it
 	local data = ffi.new('unsigned char[?]', hsvWidth*4)
-	gl.glGetTexImage(gl.GL_TEXTURE_1D, 0, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE, data)
+	self.gradientTex:toCPU(data)
 	self.gradientTex:unbind()
 	self.gradientTex = GLTex2D{
 		internalFormat = gl.GL_RGBA,
