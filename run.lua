@@ -61,7 +61,7 @@ end
 
 local View = require 'glapp.view'
 
-local App = class(require 'glapp.orbit'(require 'imguiapp'))
+local App = require 'imguiapp.withorbit'()
 App.viewDist = 3
 App.title = 'Metric Visualization'
 
