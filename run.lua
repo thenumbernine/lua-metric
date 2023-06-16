@@ -319,8 +319,7 @@ void main() {
 		height = self.floatTex.height, 
 		useDepth = true,
 	}
-	self.fbo:setColorAttachmentTex2D(0, self.floatTex.id)
-	self.fbo:bind()
+	self.fbo:setColorAttachment(self.floatTex)
 	assert(self.fbo:check())
 	self.fbo:unbind()
 
