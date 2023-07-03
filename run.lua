@@ -810,4 +810,4 @@ function App:drawMesh(method)
 	GLProgram:useNone()
 end
 
-App():run()
+return App():run()
