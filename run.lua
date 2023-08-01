@@ -319,7 +319,9 @@ void main() {
 		height = self.floatTex.height, 
 		useDepth = true,
 	}
-	self.fbo:setColorAttachment(self.floatTex)
+	self.fbo
+		:bind()
+		:setColorAttachment(self.floatTex)
 	assert(self.fbo:check())
 	self.fbo:unbind()
 
@@ -507,10 +509,11 @@ function App:calculateMesh()
 		end
 	end
 
-	self.gaussianTex:bind()
+	self.gaussianTex
+		:bind()
+		--:subimage{data=buf},
 	gl.glTexSubImage2D(gl.GL_TEXTURE_2D, 0, 0, 0, self.gaussianTex.width, self.gaussianTex.height, gl.GL_RGBA, gl.GL_FLOAT, buf)
 	self.gaussianTex:unbind()
-	glreport'here'
 
 	self:updateRicciTex()
 end
