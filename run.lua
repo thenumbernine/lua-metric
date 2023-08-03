@@ -209,7 +209,7 @@ void main() {
 	gl_FragColor.rgb *= max(abs(l), .3);
 }
 ]],
-	}
+	}:useNone()
 
 	self.pickShader = GLProgram{
 		vertexCode = [[
@@ -225,7 +225,7 @@ void main() {
 	gl_FragColor = vec4(gridCoord, 0., 1.);
 }
 ]],
-	}
+	}:useNone()
 
 	self.gradientShader = GLProgram{
 		vertexCode = [[
@@ -250,7 +250,7 @@ void main() {
 			tex = 0,
 			gradientTex = 1,
 		},
-	}
+	}:useNone()
 
 	local hsvWidth = 256
 	self.gradientTex = GradientTex(hsvWidth,
