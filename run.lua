@@ -319,11 +319,9 @@ void main() {
 		height = self.floatTex.height, 
 		useDepth = true,
 	}
-	self.fbo
-		:bind()
 		:setColorAttachment(self.floatTex)
-	assert(self.fbo:check())
-	self.fbo:unbind()
+		:assertcheck()
+		:unbind()
 
 	self.ricciTex = makeFloatTex()
 	self.gaussianTex = makeFloatTex()
