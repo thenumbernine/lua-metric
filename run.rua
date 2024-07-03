@@ -43,15 +43,6 @@ local matrix = require 'matrix'
 local symmath = require 'symmath'
 symmath.tostring = require 'symmath.export.SingleLine'
 
-matrix.normalize = [:] self / self:norm()
-
--- cross product, but with matrix instead of vector
-local cross = [a,b] matrix{
-	a[2]*b[3] - a[3]*b[2],
-	a[3]*b[1] - a[1]*b[3],
-	a[1]*b[2] - a[2]*b[1],
-}
-
 local View = require 'glapp.view'
 
 local App = require 'imguiapp.withorbit'()
@@ -415,9 +406,7 @@ App.calculateMesh = [:] do
 	self.getpt = [u1value, u2value] do
 		local pt = matrix()
 		for i=1,3 do
-			if eqns[i] then
-				pt[i] = eqns[i].func(u1value, u2value)
-			end
+			pt[i] = eqns?[i].func(u1value, u2value)
 		end
 		return pt
 	end
@@ -452,7 +441,7 @@ App.calculateMesh = [:] do
 
 				local dp_du = self.get_dp_du1(u1value, u2value)
 				local dp_dv = self.get_dp_du2(u1value, u2value)
-				local n = cross(dp_du, dp_dv):normalize()
+				local n = dp_du:cross(dp_dv):normalize()
 				gl.glNormal3f(n:unpack())
 
 				gl.glVertex3f(pt:unpack())
@@ -704,7 +693,7 @@ App.update = [:] do
 		local pt = self.getpt(self.selectedPt:unpack())
 		local dp_du = self.get_dp_du1(self.selectedPt:unpack())
 		local dp_dv = self.get_dp_du2(self.selectedPt:unpack())
-		local n = cross(dp_du, dp_dv)
+		local n = dp_du:cross(dp_dv)
 		gl.glColor3f(1,0,0)
 		for sign=-1,1,2 do
 			gl.glBegin(gl.GL_LINE_LOOP)
@@ -731,7 +720,7 @@ App.update = [:] do
 				u += du_dl * l
 				local dp_du = self.get_dp_du1(u:unpack())
 				local dp_dv = self.get_dp_du2(u:unpack())
-				local n = cross(dp_du, dp_dv)
+				local n = dp_du:cross(dp_dv)
 				gl.glVertex3d((self.getpt(u:unpack()) + n * (.01 * sign)):unpack())
 			end
 			gl.glEnd()
@@ -750,7 +739,7 @@ App.update = [:] do
 				du_dl -= self.Gamma(u:unpack()) * du_dl * du_dl * dl
 				local dp_du = self.get_dp_du1(u:unpack())
 				local dp_dv = self.get_dp_du2(u:unpack())
-				local n = cross(dp_du, dp_dv)
+				local n = dp_du:cross(dp_dv)
 				gl.glVertex3d((self.getpt(u:unpack()) + n * (.01 * sign)):unpack())
 			end
 			gl.glEnd()

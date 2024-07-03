@@ -46,19 +46,6 @@ local matrix = require 'matrix'
 local symmath = require 'symmath'
 symmath.tostring = require 'symmath.export.SingleLine'
 
-function matrix:normalize()
-	return self / self:norm()
-end
-
--- cross product, but with matrix instead of vector
-function cross(a,b)
-	return matrix{
-		a[2]*b[3] - a[3]*b[2],
-		a[3]*b[1] - a[1]*b[3],
-		a[1]*b[2] - a[2]*b[1],
-	}
-end
-
 local View = require 'glapp.view'
 
 local App = require 'imguiapp.withorbit'()
@@ -157,10 +144,10 @@ local options = table{
 }
 
 local controls = table{'rotate', 'select', 'direct'}
-local controlIndexes = controls:map(function(v,k) return k,v end)
+local controlIndexes = controls:mapi(function(v,k) return k,v end)
 
 local displays = table{'grid', 'Gaussian', 'Ricci'}
-local displayIndexes = displays:map(function(v,k) return k,v end)
+local displayIndexes = displays:mapi(function(v,k) return k,v end)
 
 function App:init(...)
 	App.super.init(self, ...)
@@ -196,11 +183,11 @@ uniform vec2 step;
 void main() {
 	vec3 n = normalize(normalV);
 	if (n.z < 0.) n = -n;	//backface lighting
-	
+
 	vec2 fc = mod(gridCoord.xy / step, 1.); //grid
 	float i = 1. - 8. * fc.x * fc.y * (1. - fc.x) * (1. - fc.y);
 	i = pow(i, 50.);
-	
+
 	//gl_FragColor = vec4(.25, .5, .5, 1.);
 	gl_FragColor = vec4(1,1,1,1);
 	gl_FragColor.rgb *= 1. - i;
@@ -275,7 +262,7 @@ void main() {
 			{254,96,50},
 			{255,188,46},
 			{255,255,55},
-		}:map(function(c,i)
+		}:mapi(function(c,i)
 			return table(matrix(c)/255):append{1}
 		end),
 --]]
@@ -313,10 +300,10 @@ void main() {
 		}
 	end
 
-	self.floatTex = makeFloatTex() 
+	self.floatTex = makeFloatTex()
 	self.fbo = FBO{
-		width = self.floatTex.width, 
-		height = self.floatTex.height, 
+		width = self.floatTex.width,
+		height = self.floatTex.height,
 		useDepth = true,
 	}
 		:setColorAttachment(self.floatTex)
@@ -327,20 +314,20 @@ void main() {
 	self.gaussianTex = makeFloatTex()
 
 	self:setOption(options[1])
-	
+
 	self.controlPtr = controlIndexes.rotate
 	self.displayPtr = displayIndexes.grid
 end
 
 function App:calculateMesh()
-	
+
 	if self.displayList then
 		gl.glDeleteLists(self.displayList, 1)
 	end
 
 	-- refresh ...
-	
-	local vars = params:map(function(param) return param.var end)
+
+	local vars = params:mapi(function(param) return param.var end)
 
 	local function compileWithConsts(expr)
 		expr = symmath.clone(expr)()
@@ -364,7 +351,7 @@ function App:calculateMesh()
 		local eta = Tensor('_IJ', {1,0,0},{0,1,0},{0,0,1})
 		flatChart:setMetric(eta, eta, 'I')
 
-		local p = Tensor('^I', eqns:map(function(eqn) return eqn.expr end):unpack())
+		local p = Tensor('^I', eqns:mapi(function(eqn) return eqn.expr end):unpack())
 		local e = Tensor'_u^I'
 		e['_u^I'] = p'^I_,u'()
 		local g = (e'_u^I' * e'_v^J' * eta'_IJ')()
@@ -373,7 +360,7 @@ function App:calculateMesh()
 		dg['_uvw'] = g'_uv,w'()
 		local Gamma = ((dg'_uvw' + dg'_uwv' - dg'_vwu')/2)()
 		Gamma = Gamma'^u_vw'()
-		
+
 		local dGamma = Tensor'^a_bcd'
 		dGamma['^a_bcd'] = Gamma'^a_bc,d'()
 		local Riemann = Tensor'^a_bcd'
@@ -387,7 +374,7 @@ function App:calculateMesh()
 				local any
 				for k,v in expr:iter() do
 					if v ~= symmath.Constant(0) then
-						local i = table.map(expr.variance, function(v,i)
+						local i = table.mapi(expr.variance, function(v,i)
 							return v.lower and '_'..k[i] or '^'..k[i]
 						end):concat()
 						self.strs:insert(name..i..' = '..v)
@@ -395,14 +382,14 @@ function App:calculateMesh()
 					end
 				end
 				if not any then
-					local i = table.map(expr.variance, tostring):concat()
+					local i = table.mapi(expr.variance, tostring):concat()
 					self.strs:insert(name..i..' = 0')
 				end
 			else
 				self.strs:insert(name..' = '..expr)
 			end
 		end
-		
+
 		self.strs = table()
 		addStrs('g', g)
 		addStrs('Gamma', Gamma)
@@ -419,8 +406,8 @@ function App:calculateMesh()
 		end
 
 		local func_Ricci = compileWithConsts(Ricci)
-		self.Ricci = function(...) 
-			return matrix(func_Ricci(...)) 
+		self.Ricci = function(...)
+			return matrix(func_Ricci(...))
 		end
 
 		self.Gaussian = compileWithConsts(Gaussian)
@@ -432,13 +419,13 @@ function App:calculateMesh()
 	self.getpt = function(u1value, u2value)
 		local pt = matrix()
 		for i=1,3 do
-			if eqns[i] then 
-				pt[i] = eqns[i].func(u1value, u2value) 
+			if eqns[i] then
+				pt[i] = eqns[i].func(u1value, u2value)
 			end
 		end
 		return pt
 	end
-	
+
 	local u1, u2 = params:unpack()
 
 	self.get_dp_du1 = function(u1value, u2value)
@@ -468,22 +455,22 @@ function App:calculateMesh()
 				local u1value = u1frac * (u1.max - u1.min) + u1.min
 				local pt = self.getpt(u1value, u2value)
 				gl.glTexCoord2f(u1value, u2value)
-			
+
 				local dp_du = self.get_dp_du1(u1value, u2value)
-				local dp_dv = self.get_dp_du2(u1value, u2value) 
-				local n = cross(dp_du, dp_dv):normalize()
+				local dp_dv = self.get_dp_du2(u1value, u2value)
+				local n = dp_du:cross(dp_dv):normalize()
 				gl.glNormal3f(n:unpack())
-				
+
 				gl.glVertex3f(pt:unpack())
 			end
 		end
 		gl.glEnd()
 	end
-	
-	gl.glEndList()				
+
+	gl.glEndList()
 
 	local buf = ffi.new('float[?]', self.gaussianTex.width * self.gaussianTex.height * 4)
-	
+
 	local gaussianMin = math.huge
 	local gaussianMax = -math.huge
 	for i=0,self.gaussianTex.width-1 do
@@ -571,7 +558,7 @@ function App:setOption(option)
 		params[i].max = option.maxs[i]
 		params[i].step = option.step[i]
 	end
-	local vars = params:map(function(param) return param.var end)
+	local vars = params:mapi(function(param) return param.var end)
 	local varnames = table(option.vars)
 	for varname,value in pairs(option.consts) do
 		varnames:insert(varname)
@@ -597,7 +584,7 @@ end
 
 function App:updateGUI()
 	if ig.igCollapsingHeader'controls:' then
-		for i,control in ipairs(controls) do	
+		for i,control in ipairs(controls) do
 			ig.luatableRadioButton(control, self, 'controlPtr', i)
 		end
 	end
@@ -675,7 +662,7 @@ function App:getCoord(mx,my)
 	local u
 	if ix >= 0 and iy >= 0 and ix < self.fbo.width and iy < self.fbo.height then
 		gl.glReadPixels(ix, iy, 1, 1, gl.GL_DEPTH_COMPONENT, gl.GL_FLOAT, depth)
-		if depth[0] < 1 then 
+		if depth[0] < 1 then
 			gl.glReadPixels(ix, iy, 1, 1, gl.GL_RGBA, gl.GL_FLOAT, results)
 			u = matrix{tonumber(results[0]),tonumber(results[1])}
 		end
@@ -685,15 +672,15 @@ function App:getCoord(mx,my)
 	return u
 end
 
-function App:update()		
+function App:update()
 	local canHandleMouse = not ig.igGetIO()[0].WantCaptureMouse
 	local canHandleKeyboard = not ig.igGetIO()[0].WantCaptureKeyboard
-	
-	if canHandleMouse then 
+
+	if canHandleMouse then
 		if self.controlPtr == controlIndexes.select then
 			if self.mouse.leftDown then
 				self.selectedPt = self:getCoord(self.mouse.pos:unpack()) or self.selectedPt
-			end	
+			end
 		elseif self.controlPtr == controlIndexes.direct then
 			if self.mouse.leftDown
 			and self.selectedPt
@@ -712,10 +699,10 @@ function App:update()
 						self:updateRicciTex()
 					end
 				end
-			end	
+			end
 		end
 	end
-	
+
 	gl.glClear(bit.bor(gl.GL_COLOR_BUFFER_BIT, gl.GL_DEPTH_BUFFER_BIT))
 	self.view:setupProjection(self.width / self.height)
 	self:drawMesh'display'
@@ -725,7 +712,7 @@ function App:update()
 		local pt = self.getpt(self.selectedPt:unpack())
 		local dp_du = self.get_dp_du1(self.selectedPt:unpack())
 		local dp_dv = self.get_dp_du2(self.selectedPt:unpack())
-		local n = cross(dp_du, dp_dv)
+		local n = dp_du:cross(dp_dv)
 		gl.glColor3f(1,0,0)
 		for sign=-1,1,2 do
 			gl.glBegin(gl.GL_LINE_LOOP)
@@ -740,7 +727,7 @@ function App:update()
 			gl.glEnd()
 		end
 	end
-	
+
 	if self.dir then
 		gl.glColor3f(.75,.5,0)
 		for sign=-1,1,2 do
@@ -752,7 +739,7 @@ function App:update()
 				u = u + du_dl * l
 				local dp_du = self.get_dp_du1(u:unpack())
 				local dp_dv = self.get_dp_du2(u:unpack())
-				local n = cross(dp_du, dp_dv)
+				local n = dp_du:cross(dp_dv)
 				gl.glVertex3d((self.getpt(u:unpack()) + n * (.01 * sign)):unpack())
 			end
 			gl.glEnd()
@@ -771,7 +758,7 @@ function App:update()
 				du_dl = du_dl - self.Gamma(u:unpack()) * du_dl * du_dl * dl
 				local dp_du = self.get_dp_du1(u:unpack())
 				local dp_dv = self.get_dp_du2(u:unpack())
-				local n = cross(dp_du, dp_dv)
+				local n = dp_du:cross(dp_dv)
 				gl.glVertex3d((self.getpt(u:unpack()) + n * (.01 * sign)):unpack())
 			end
 			gl.glEnd()
@@ -786,7 +773,7 @@ end
 function App:drawMesh(method)
 	self.view:setupModelView()
 	if method == 'display' then
-		if self.displayPtr == displayIndexes.grid then 
+		if self.displayPtr == displayIndexes.grid then
 			self.gridShader:use()
 			gl.glUniform2f(self.gridShader.uniforms.step.loc, params[1].step, params[2].step)
 		elseif self.displayPtr == displayIndexes.Gaussian then
