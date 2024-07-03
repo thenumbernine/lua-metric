@@ -345,21 +345,16 @@ App.calculateMesh = [:] do
 		flatChart:setMetric(eta, eta, 'I')
 
 		local p = Tensor('^I', eqns:mapi([eqn] eqn.expr):unpack())
-		local e = Tensor'_u^I'
-		e['_u^I'] = p'^I_,u'()
+		local e = p'^I_,u'():permute'_u^I'
 		local g = (e'_u^I' * e'_v^J' * eta'_IJ')()
 		chart:setMetric(g)
-		local dg = Tensor'_uvw'
-		dg['_uvw'] = g'_uv,w'()
+		local dg = g'_uv,w'():permute'_uvw'
 		local Gamma = ((dg'_uvw' + dg'_uwv' - dg'_vwu')/2)()
 		Gamma = Gamma'^u_vw'()
 
-		local dGamma = Tensor'^a_bcd'
-		dGamma['^a_bcd'] = Gamma'^a_bc,d'()
-		local Riemann = Tensor'^a_bcd'
-		Riemann['^a_bcd'] = (dGamma'^a_bdc' - dGamma'^a_bcd' + Gamma'^a_uc' * Gamma'^u_bd' - Gamma'^a_ud' * Gamma'^u_bc')()
-		local Ricci = Tensor'_ab'
-		Ricci['_ab'] = Riemann'^c_acb'()
+		local dGamma = Gamma'^a_bc,d'():permute'^a_bcd'
+		local Riemann = (dGamma'^a_bdc' - dGamma'^a_bcd' + Gamma'^a_uc' * Gamma'^u_bd' - Gamma'^a_ud' * Gamma'^u_bc')():permute'^a_bcd'
+		local Ricci = Riemann'^c_acb'():permute'_ab'
 		local Gaussian = Ricci'^a_a'()
 
 		local addStrs = [name, expr] do
@@ -367,7 +362,7 @@ App.calculateMesh = [:] do
 				local any
 				for k,v in expr:iter() do
 					if v ~= symmath.Constant(0) then
-						local i = table.mapi(expr.variance, [v,i] v.lower and '_'..k[i] or '^'..k[i]):concat()
+						local i = table.mapi(expr.variance, [v,i]((v.lower and '_' or '^')..k[i])):concat()
 						self.strs:insert(name..i..' = '..v)
 						any = true
 					end
@@ -519,14 +514,14 @@ App.updateRicciTex = [:] do
 
 end
 
+local I = [...]...
+
 App.event = [:, event, ...] do
 	-- TODO disable orbit
 	if self.controlPtr ~= controlIndexes.rotate then
 		pushView = View(self.view)
 	end
-	if App.super.event then
-		App.super.event(self, event, ...)
-	end
+	I(App.super.event?(self, event, ...))
 	if self.controlPtr ~= controlIndexes.rotate then
 		self.view = pushView
 	end

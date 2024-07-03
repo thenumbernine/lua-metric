@@ -352,21 +352,16 @@ function App:calculateMesh()
 		flatChart:setMetric(eta, eta, 'I')
 
 		local p = Tensor('^I', eqns:mapi(function(eqn) return eqn.expr end):unpack())
-		local e = Tensor'_u^I'
-		e['_u^I'] = p'^I_,u'()
+		local e = p'^I_,u'():permute'_u^I'
 		local g = (e'_u^I' * e'_v^J' * eta'_IJ')()
 		chart:setMetric(g)
-		local dg = Tensor'_uvw'
-		dg['_uvw'] = g'_uv,w'()
+		local dg = g'_uv,w'():permute'_uvw'
 		local Gamma = ((dg'_uvw' + dg'_uwv' - dg'_vwu')/2)()
 		Gamma = Gamma'^u_vw'()
 
-		local dGamma = Tensor'^a_bcd'
-		dGamma['^a_bcd'] = Gamma'^a_bc,d'()
-		local Riemann = Tensor'^a_bcd'
-		Riemann['^a_bcd'] = (dGamma'^a_bdc' - dGamma'^a_bcd' + Gamma'^a_uc' * Gamma'^u_bd' - Gamma'^a_ud' * Gamma'^u_bc')()
-		local Ricci = Tensor'_ab'
-		Ricci['_ab'] = Riemann'^c_acb'()
+		local dGamma = Gamma'^a_bc,d'():permute'^a_bcd'
+		local Riemann = (dGamma'^a_bdc' - dGamma'^a_bcd' + Gamma'^a_uc' * Gamma'^u_bd' - Gamma'^a_ud' * Gamma'^u_bc')():permute'^a_bcd'
+		local Ricci = Riemann'^c_acb'():permute'_ab'
 		local Gaussian = Ricci'^a_a'()
 
 		local function addStrs(name, expr)
