@@ -362,7 +362,7 @@ App.calculateMesh = [:] do
 				local any
 				for k,v in expr:iter() do
 					if v ~= symmath.Constant(0) then
-						local i = table.mapi(expr.variance, [v,i]((v.lower??'_':'^')..k[i])):concat()
+						local i = table.mapi(expr.variance, [v,i]((v.lower?'_':'^')..k[i])):concat()
 						self.strs:insert(name..i..' = '..v)
 						any = true
 					end
