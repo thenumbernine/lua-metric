@@ -49,6 +49,7 @@ symmath.tostring = require 'symmath.export.SingleLine'
 local View = require 'glapp.view'
 
 local App = require 'imguiapp.withorbit'()
+App.viewUseGLMatrixMode = true
 App.viewDist = 3
 App.title = 'Metric Visualization'
 
