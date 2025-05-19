@@ -32,7 +32,6 @@ TODO:
 *) parallel propagation between two points
 --]]
 require 'ext'
-local bit = require 'bit'
 local ffi = require 'ffi'
 local sdl = require 'sdl.setup'(cmdline.sdl or '2')		-- hmmmmm
 local gl = require 'gl.setup'(cmdline.gl)
@@ -496,23 +495,19 @@ function App:calculateMesh()
 	local normalCPU = normalGPU:beginUpdate()
 	self.meshObj.geometries = table()
 	for u1div=0,u1.divs do--FIXME
-		--gl.glBegin(gl.GL_TRIANGLE_STRIP)
 		for u2div=0,u2.divs do
 			local u2frac = u2div / u2.divs
 			local u2value = u2frac * (u2.max - u2.min) + u2.min
 			local u1frac = u1div / u1.divs
 			local u1value = u1frac * (u1.max - u1.min) + u1.min
 			local pt = self.getpt(u1value, u2value)
-			--gl.glTexCoord2f(u1value, u2value)
 			texcoordCPU:emplace_back():set(u1value, u2value)
 
 			local dp_du = self.get_dp_du1(u1value, u2value)
 			local dp_dv = self.get_dp_du2(u1value, u2value)
 			local n = dp_du:cross(dp_dv):normalize()
-			--gl.glNormal3f(n:unpack())
 			normalCPU:emplace_back():set(n:unpack())
 
-			--gl.glVertex3f(pt:unpack())
 			vertexCPU:emplace_back():set(pt:unpack())
 		end
 	end
@@ -523,7 +518,6 @@ function App:calculateMesh()
 				indexes:insert(u1div + u1ofs + u2div * (u2.divs+1))
 			end
 		end
-		--gl.glEnd()
 		self.meshObj.geometries:insert(GLGeometry{
 			mode = gl.GL_TRIANGLE_STRIP,
 			indexes = {
@@ -784,10 +778,8 @@ function App:update()
 		local dp_dv = self.get_dp_du2(self.selectedPt:unpack())
 		local n = dp_du:cross(dp_dv)
 		self.lineStripObj.uniforms.color = {1, 0, 0}
-		--gl.glColor3f(1,0,0)
 		for sign=-1,1,2 do
 			local vtxs = self.lineStripObj:beginUpdate()
-			--gl.glBegin(gl.GL_LINE_STRIP)
 			for i=0,100 do
 				local theta = 2 * math.pi * i / 100
 				local radius = .1
@@ -795,21 +787,17 @@ function App:update()
 				local y = dp_dv * (math.sin(theta) * radius)
 				local z = n * (.01 * sign)
 				vtxs:emplace_back():set((pt + x + y + z):unpack())
-				--gl.glVertex3f((pt + x + y + z):unpack())
 			end
-			--gl.glEnd()
 			self.lineStripObj:endUpdate()
 		end
 	end
 
 	if self.dir then
-		--gl.glColor3f(.75,.5,0)
 		self.lineStripObj.uniforms.color = {.75, .5, 0}
 		for sign=-1,1,2 do
 			local u = self.selectedPt
 			local du_dl = matrix(self.dir)
 			local l = .05
-			--gl.glBegin(gl.GL_LINE_STRIP)
 			local vtxs = self.lineStripObj:beginUpdate()
 			for i=1,100 do
 				u = u + du_dl * l
@@ -817,19 +805,15 @@ function App:update()
 				local dp_dv = self.get_dp_du2(u:unpack())
 				local n = dp_du:cross(dp_dv)
 				vtxs:emplace_back():set((self.getpt(u:unpack()) + n * (.01 * sign)):unpack())
-				--gl.glVertex3d((self.getpt(u:unpack()) + n * (.01 * sign)):unpack())
 			end
-			--gl.glEnd()
 			self.lineStripObj:endUpdate()
 		end
 
-		--gl.glColor3f(.5,0,.75)
 		self.lineStripObj.uniforms.color = {.5, 0, .75}
 		for sign=-1,1,2 do
 			local u = self.selectedPt
 			local du_dl = matrix(self.dir)
 			local dl = .05
-			--gl.glBegin(gl.GL_LINE_STRIP)
 			local vtxs = self.lineStripObj:beginUpdate()
 			for iter=1,100 do
 				-- x''^a + Gamma^a_uv x'^u x'^v = 0
@@ -840,9 +824,7 @@ function App:update()
 				local dp_dv = self.get_dp_du2(u:unpack())
 				local n = dp_du:cross(dp_dv)
 				vtxs:emplace_back():set((self.getpt(u:unpack()) + n * (.01 * sign)):unpack())
-				--gl.glVertex3d((self.getpt(u:unpack()) + n * (.01 * sign)):unpack())
 			end
-			--gl.glEnd()
 			self.lineStripObj:endUpdate()
 		end
 	end
