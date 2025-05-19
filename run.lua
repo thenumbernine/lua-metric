@@ -34,14 +34,15 @@ TODO:
 require 'ext'
 local bit = require 'bit'
 local ffi = require 'ffi'
+local sdl = require 'sdl.setup'(cmdline.sdl or '2')		-- hmmmmm
+local gl = require 'gl.setup'(cmdline.gl)
 local ig = require 'imgui'
-local gl = require 'gl'
-local sdl = require 'sdl'
 local GLProgram = require 'gl.program'
 local GLTex2D = require 'gl.tex2d'
 local GradientTex = require 'gl.gradienttex'
 local glreport = require 'gl.report'
 local FBO = require 'gl.fbo'
+local GLGeometry = require 'gl.geometry'
 local GLSceneObject = require 'gl.sceneobject'
 local matrix = require 'matrix'
 local symmath = require 'symmath'
@@ -163,26 +164,24 @@ function App:initGL(...)
 	gl.glClearColor(1,1,1,1)
 	gl.glEnable(gl.GL_DEPTH_TEST)
 
-	self.lineShader = GLProgram{
-		version = 'latest',
-		vertexCode = [[
+	self.lineStripObj = GLSceneObject{
+		program = {
+			version = 'latest',
+			vertexCode = [[
 in vec3 vertex;
 uniform mat4 mvProjMat;
 void main() {
 	gl_Position = mvProjMat * vec4(vertex, 1.);
 }
 ]],
-		fragmentCode = [[
+			fragmentCode = [[
 uniform vec3 color;
 out vec4 fragColor;
 void main() {
 	fragColor = vec4(color, 1.);
 }
 ]],
-	}:useNone()
-
-	self.lineStripObj = GLSceneObject{
-		program = self.lineShader,
+		},
 		geometry = {
 			mode = gl.GL_LINE_STRIP,
 		},
@@ -190,29 +189,31 @@ void main() {
 			useVec = true,
 			dim = 3,
 		},
-		--uniforms = {
-			--mvProjMat = self.view.mvProjMat.ptr,
-		--},
 	}
 
 	self.gridShader = GLProgram{
+		version = 'latest',
 		vertexCode = [[
-varying vec2 gridCoord;
-varying vec3 normalV;
-varying vec3 vertexV;
+in layout(location=0) vec3 vertex;
+in layout(location=1) vec2 texcoord;
+in layout(location=2) vec3 normal;
+out vec2 gridCoord;
+out vec3 normalV;
+out vec3 vertexV;
 uniform mat4 mvMat, projMat;
 void main() {
-	normalV = (mvMat * vec4(gl_Normal, 0.)).xyz;
-	vec4 mvtx = mvMat * gl_Vertex;
+	normalV = (mvMat * vec4(normal, 0.)).xyz;
+	vec4 mvtx = mvMat * vec4(vertex, 1.);
 	vertexV = mvtx.xyz;
 	gl_Position = projMat * mvtx;
-	gridCoord = gl_MultiTexCoord0.st;
+	gridCoord = texcoord;
 }
 ]],
 		fragmentCode = [[
-varying vec2 gridCoord;
-varying vec3 normalV;
-varying vec3 vertexV;
+in vec2 gridCoord;
+in vec3 normalV;
+in vec3 vertexV;
+out vec4 fragColor;
 uniform vec2 step;
 void main() {
 	vec3 n = normalize(normalV);
@@ -222,51 +223,59 @@ void main() {
 	float i = 1. - 8. * fc.x * fc.y * (1. - fc.x) * (1. - fc.y);
 	i = pow(i, 50.);
 
-	//gl_FragColor = vec4(.25, .5, .5, 1.);
-	gl_FragColor = vec4(1,1,1,1);
-	gl_FragColor.rgb *= 1. - i;
+	//fragColor = vec4(.25, .5, .5, 1.);
+	fragColor = vec4(1,1,1,1);
+	fragColor.rgb *= 1. - i;
 	vec3 u = normalize(vertexV);
 	float l = dot(n, u);
-	gl_FragColor.rgb *= max(abs(l), .3);
+	fragColor.rgb *= max(abs(l), .3);
 }
 ]],
 	}:useNone()
 
 	self.pickShader = GLProgram{
+		version = 'latest',
 		vertexCode = [[
-varying vec2 gridCoord;
+layout(location=0) in vec3 vertex;
+layout(location=1) in vec2 texcoord;
+out vec2 gridCoord;
 uniform mat4 mvProjMat;
 void main() {
-	gl_Position = mvProjMat * gl_Vertex;
-	gridCoord = gl_MultiTexCoord0.st;
+	gl_Position = mvProjMat * vec4(vertex, 1.);
+	gridCoord = texcoord;
 }
 ]],
 		fragmentCode = [[
-varying vec2 gridCoord;
+in vec2 gridCoord;
+out vec4 fragColor;
 void main() {
-	gl_FragColor = vec4(gridCoord, 0., 1.);
+	fragColor = vec4(gridCoord, 0., 1.);
 }
 ]],
 	}:useNone()
 
 	self.gradientShader = GLProgram{
+		version = 'latest',
 		vertexCode = [[
-varying vec2 gridCoord;
+layout(location=0) in vec3 vertex;
+layout(location=1) in vec2 texcoord;
+out vec2 gridCoord;
 uniform mat4 mvProjMat;
 void main() {
-	gl_Position = mvProjMat * gl_Vertex;
-	gridCoord = gl_MultiTexCoord0.st;
+	gl_Position = mvProjMat * vec4(vertex, 1.);
+	gridCoord = texcoord;
 }
 ]],
 		fragmentCode = [[
-varying vec2 gridCoord;
+in vec2 gridCoord;
+out vec4 fragColor;
 uniform sampler2D tex;
 uniform sampler2D gradientTex;
 uniform vec2 mins, maxs;
 void main() {
 	vec2 tc = (gridCoord - mins) / (maxs - mins);
-	float value = texture2D(tex, tc).r;
-	gl_FragColor = texture2D(gradientTex, vec2(value, .5));
+	float value = texture(tex, tc).r;
+	fragColor = texture(gradientTex, vec2(value, .5));
 }
 ]],
 		uniforms = {
@@ -274,6 +283,32 @@ void main() {
 			gradientTex = 1,
 		},
 	}:useNone()
+
+	self.meshObj = GLSceneObject{
+		-- can I have a GLSceneObject without a program?
+		-- what would the attributes initialize with, i.e. how do they infer the shader variable properties?
+		-- I'll think about that later, and just pick one of the 3 shaders to initialize with...
+		program = self.gridShader,
+		geometries = table(),
+		vertexes = {
+			useVec = true,
+			dim = 3,
+		},
+		attrs = {
+			texcoord = {
+				buffer = {
+					useVec = true,
+					dim = 2,
+				},
+			},
+			normal = {
+				buffer = {
+					useVec = true,
+					dim = 3,
+				},
+			},
+		},
+	}
 
 	local hsvWidth = 256
 	self.gradientTex = GradientTex(hsvWidth,
@@ -356,10 +391,6 @@ void main() {
 end
 
 function App:calculateMesh()
-
-	if self.displayList then
-		gl.glDeleteLists(self.displayList, 1)
-	end
 
 	-- refresh ...
 
@@ -444,9 +475,6 @@ function App:calculateMesh()
 		self.Gaussian = compileWithConsts(Gaussian)
 	end
 
-	self.displayList = gl.glGenLists(1)
-	gl.glNewList(self.displayList, gl.GL_COMPILE)
-
 	self.getpt = function(u1value, u2value)
 		local pt = matrix()
 		for i=1,3 do
@@ -476,29 +504,54 @@ function App:calculateMesh()
 		}
 	end
 
-	for u1div=0,u1.divs-1 do
-		gl.glBegin(gl.GL_TRIANGLE_STRIP)
+	local vertexGPU = self.meshObj.attrs.vertex.buffer
+	local vertexCPU = vertexGPU:beginUpdate()
+	local texcoordGPU = self.meshObj.attrs.texcoord.buffer
+	local texcoordCPU = texcoordGPU:beginUpdate()
+	local normalGPU = self.meshObj.attrs.normal.buffer
+	local normalCPU = normalGPU:beginUpdate()
+	self.meshObj.geometries = table()
+	for u1div=0,u1.divs do--FIXME
+		--gl.glBegin(gl.GL_TRIANGLE_STRIP)
 		for u2div=0,u2.divs do
 			local u2frac = u2div / u2.divs
 			local u2value = u2frac * (u2.max - u2.min) + u2.min
+			local u1frac = u1div / u1.divs
+			local u1value = u1frac * (u1.max - u1.min) + u1.min
+			local pt = self.getpt(u1value, u2value)
+			--gl.glTexCoord2f(u1value, u2value)
+			texcoordCPU:emplace_back():set(u1value, u2value)
+
+			local dp_du = self.get_dp_du1(u1value, u2value)
+			local dp_dv = self.get_dp_du2(u1value, u2value)
+			local n = dp_du:cross(dp_dv):normalize()
+			--gl.glNormal3f(n:unpack())
+			normalCPU:emplace_back():set(n:unpack())
+
+			--gl.glVertex3f(pt:unpack())
+			vertexCPU:emplace_back():set(pt:unpack())
+		end
+	end
+	for u1div=0,u1.divs-1 do
+		local indexes = table()
+		for u2div=0,u2.divs do
 			for u1ofs=1,0,-1 do
-				local u1frac = (u1div + u1ofs) / u1.divs
-				local u1value = u1frac * (u1.max - u1.min) + u1.min
-				local pt = self.getpt(u1value, u2value)
-				gl.glTexCoord2f(u1value, u2value)
-
-				local dp_du = self.get_dp_du1(u1value, u2value)
-				local dp_dv = self.get_dp_du2(u1value, u2value)
-				local n = dp_du:cross(dp_dv):normalize()
-				gl.glNormal3f(n:unpack())
-
-				gl.glVertex3f(pt:unpack())
+				indexes:insert(u1div + u1ofs + u2div * (u2.divs+1))
 			end
 		end
-		gl.glEnd()
+		--gl.glEnd()
+		self.meshObj.geometries:insert(GLGeometry{
+			mode = gl.GL_TRIANGLE_STRIP,
+			indexes = {
+				data = indexes,
+			},
+			vertexes = vertexGPU,
+		})
 	end
+	vertexGPU:endUpdate()
+	texcoordGPU:endUpdate()
+	normalGPU:endUpdate()
 
-	gl.glEndList()
 
 	local buf = ffi.new('float[?]', self.gaussianTex.width * self.gaussianTex.height * 4)
 
@@ -817,12 +870,14 @@ end
 
 function App:drawMesh(method)
 	self.view:setup(self.width / self.height)
+	local program
 	if method == 'display' then
 		if self.displayPtr == displayIndexes.grid then
 			self.gridShader:use()
 			self.gridShader:setUniform('mvMat', self.view.mvMat.ptr)
 			self.gridShader:setUniform('projMat', self.view.projMat.ptr)
 			gl.glUniform2f(self.gridShader.uniforms.step.loc, params[1].step, params[2].step)
+			program = self.gridShader
 		elseif self.displayPtr == displayIndexes.Gaussian then
 			self.gradientShader:use()
 			self.gradientShader:setUniform('mvProjMat', self.view.mvProjMat.ptr)
@@ -830,6 +885,7 @@ function App:drawMesh(method)
 			self.gradientTex:bind(1)
 			gl.glUniform2f(self.gradientShader.uniforms.mins.loc, params[1].min, params[2].min)
 			gl.glUniform2f(self.gradientShader.uniforms.maxs.loc, params[1].max, params[2].max)
+			program = self.gradientShader
 		elseif self.displayPtr == displayIndexes.Ricci then
 			self.gradientShader:use()
 			self.gradientShader:setUniform('mvProjMat', self.view.mvProjMat.ptr)
@@ -837,12 +893,18 @@ function App:drawMesh(method)
 			self.gradientTex:bind(1)
 			gl.glUniform2f(self.gradientShader.uniforms.mins.loc, params[1].min, params[2].min)
 			gl.glUniform2f(self.gradientShader.uniforms.maxs.loc, params[1].max, params[2].max)
+			program = self.gradientShader
 		end
 	elseif method == 'pick' then
 		self.pickShader:use()
 		self.pickShader:setUniform('mvProjMat', self.view.mvProjMat.ptr)
+		program = self.pickShader
 	end
-	gl.glCallList(self.displayList)
+
+	self.meshObj:draw{
+		program = program,
+	}
+
 	GLTex2D:unbind(1)
 	GLTex2D:unbind(0)
 	GLProgram:useNone()
