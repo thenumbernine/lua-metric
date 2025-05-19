@@ -39,7 +39,7 @@ local gl = require 'gl.setup'(cmdline.gl)
 local ig = require 'imgui'
 local GLProgram = require 'gl.program'
 local GLTex2D = require 'gl.tex2d'
-local GradientTex = require 'gl.gradienttex'
+local GradientTex = require 'gl.gradienttex2d'
 local glreport = require 'gl.report'
 local FBO = require 'gl.fbo'
 local GLGeometry = require 'gl.geometry'
@@ -167,6 +167,7 @@ function App:initGL(...)
 	self.lineStripObj = GLSceneObject{
 		program = {
 			version = 'latest',
+			precision = 'best',
 			vertexCode = [[
 in vec3 vertex;
 uniform mat4 mvProjMat;
@@ -193,10 +194,11 @@ void main() {
 
 	self.gridShader = GLProgram{
 		version = 'latest',
+		precision = 'best',
 		vertexCode = [[
-in layout(location=0) vec3 vertex;
-in layout(location=1) vec2 texcoord;
-in layout(location=2) vec3 normal;
+layout(location=0) in vec3 vertex;
+layout(location=1) in vec2 texcoord;
+layout(location=2) in vec3 normal;
 out vec2 gridCoord;
 out vec3 normalV;
 out vec3 vertexV;
@@ -235,6 +237,7 @@ void main() {
 
 	self.pickShader = GLProgram{
 		version = 'latest',
+		precision = 'best',
 		vertexCode = [[
 layout(location=0) in vec3 vertex;
 layout(location=1) in vec2 texcoord;
@@ -256,6 +259,7 @@ void main() {
 
 	self.gradientShader = GLProgram{
 		version = 'latest',
+		precision = 'best',
 		vertexCode = [[
 layout(location=0) in vec3 vertex;
 layout(location=1) in vec2 texcoord;
@@ -338,26 +342,6 @@ void main() {
 		end),
 --]]
 		false)
-	-- change to 2D so imgui can use it
-	local data = ffi.new('unsigned char[?]', hsvWidth*4)
-	self.gradientTex:toCPU(data)
-	self.gradientTex:unbind()
-	self.gradientTex = GLTex2D{
-		internalFormat = gl.GL_RGBA,
-		width = hsvWidth,
-		height = 1,
-		format = gl.GL_RGBA,
-		type = gl.GL_UNSIGNED_BYTE,
-		data = data,
-		minFilter = gl.GL_LINEAR_MIPMAP_LINEAR,
-		magFilter = gl.GL_LINEAR,
-		wrap = {
-			s = gl.GL_CLAMP_TO_EDGE,
-			t = gl.GL_REPEAT,
-		},
-		generateMipmap = true,
-	}
-
 
 	local function makeFloatTex()
 		return GLTex2D{
@@ -659,7 +643,7 @@ function App:setOption(option)
 			'return '..expr,
 		}:concat'\n'
 		print('str',str)
-		eqn.expr = assert(loadstring(str))(vars:unpack())
+		eqn.expr = assert(load(str))(vars:unpack())
 		print('to',eqn.expr)
 	end
 	self:calculateMesh()
