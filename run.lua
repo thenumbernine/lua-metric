@@ -42,6 +42,7 @@ local GLTex2D = require 'gl.tex2d'
 local GradientTex = require 'gl.gradienttex'
 local glreport = require 'gl.report'
 local FBO = require 'gl.fbo'
+local GLSceneObject = require 'gl.sceneobject'
 local matrix = require 'matrix'
 local symmath = require 'symmath'
 symmath.tostring = require 'symmath.export.SingleLine'
@@ -49,7 +50,6 @@ symmath.tostring = require 'symmath.export.SingleLine'
 local View = require 'glapp.view'
 
 local App = require 'imgui.appwithorbit'()
-App.viewUseGLMatrixMode = true
 App.viewDist = 3
 App.title = 'Metric Visualization'
 
@@ -163,16 +163,49 @@ function App:initGL(...)
 	gl.glClearColor(1,1,1,1)
 	gl.glEnable(gl.GL_DEPTH_TEST)
 
+	self.lineShader = GLProgram{
+		version = 'latest',
+		vertexCode = [[
+in vec3 vertex;
+uniform mat4 mvProjMat;
+void main() {
+	gl_Position = mvProjMat * vec4(vertex, 1.);
+}
+]],
+		fragmentCode = [[
+uniform vec3 color;
+out vec4 fragColor;
+void main() {
+	fragColor = vec4(color, 1.);
+}
+]],
+	}:useNone()
+
+	self.lineStripObj = GLSceneObject{
+		program = self.lineShader,
+		geometry = {
+			mode = gl.GL_LINE_STRIP,
+		},
+		vertexes = {
+			useVec = true,
+			dim = 3,
+		},
+		--uniforms = {
+			--mvProjMat = self.view.mvProjMat.ptr,
+		--},
+	}
+
 	self.gridShader = GLProgram{
 		vertexCode = [[
 varying vec2 gridCoord;
 varying vec3 normalV;
 varying vec3 vertexV;
+uniform mat4 mvMat, projMat;
 void main() {
-	normalV = (gl_ModelViewMatrix * vec4(gl_Normal, 0.)).xyz;
-	vec4 mvtx = gl_ModelViewMatrix * gl_Vertex;
+	normalV = (mvMat * vec4(gl_Normal, 0.)).xyz;
+	vec4 mvtx = mvMat * gl_Vertex;
 	vertexV = mvtx.xyz;
-	gl_Position = gl_ProjectionMatrix * mvtx;
+	gl_Position = projMat * mvtx;
 	gridCoord = gl_MultiTexCoord0.st;
 }
 ]],
@@ -202,8 +235,9 @@ void main() {
 	self.pickShader = GLProgram{
 		vertexCode = [[
 varying vec2 gridCoord;
+uniform mat4 mvProjMat;
 void main() {
-	gl_Position = ftransform();
+	gl_Position = mvProjMat * gl_Vertex;
 	gridCoord = gl_MultiTexCoord0.st;
 }
 ]],
@@ -218,8 +252,9 @@ void main() {
 	self.gradientShader = GLProgram{
 		vertexCode = [[
 varying vec2 gridCoord;
+uniform mat4 mvProjMat;
 void main() {
-	gl_Position = ftransform();
+	gl_Position = mvProjMat * gl_Vertex;
 	gridCoord = gl_MultiTexCoord0.st;
 }
 ]],
@@ -703,50 +738,62 @@ function App:update()
 	self.view:setupProjection(self.width / self.height)
 	self:drawMesh'display'
 
+	self.lineStripObj.uniforms.mvProjMat = self.view.mvProjMat.ptr
+
 	if self.selectedPt then
 		-- draw selected coordinate
 		local pt = self.getpt(self.selectedPt:unpack())
 		local dp_du = self.get_dp_du1(self.selectedPt:unpack())
 		local dp_dv = self.get_dp_du2(self.selectedPt:unpack())
 		local n = dp_du:cross(dp_dv)
-		gl.glColor3f(1,0,0)
+		self.lineStripObj.uniforms.color = {1, 0, 0}
+		--gl.glColor3f(1,0,0)
 		for sign=-1,1,2 do
-			gl.glBegin(gl.GL_LINE_LOOP)
-			for i=1,100 do
+			local vtxs = self.lineStripObj:beginUpdate()
+			--gl.glBegin(gl.GL_LINE_STRIP)
+			for i=0,100 do
 				local theta = 2 * math.pi * i / 100
 				local radius = .1
 				local x = dp_du * (math.cos(theta) * radius)
 				local y = dp_dv * (math.sin(theta) * radius)
 				local z = n * (.01 * sign)
-				gl.glVertex3f((pt + x + y + z):unpack())
+				vtxs:emplace_back():set((pt + x + y + z):unpack())
+				--gl.glVertex3f((pt + x + y + z):unpack())
 			end
-			gl.glEnd()
+			--gl.glEnd()
+			self.lineStripObj:endUpdate()
 		end
 	end
 
 	if self.dir then
-		gl.glColor3f(.75,.5,0)
+		--gl.glColor3f(.75,.5,0)
+		self.lineStripObj.uniforms.color = {.75, .5, 0}
 		for sign=-1,1,2 do
 			local u = self.selectedPt
 			local du_dl = matrix(self.dir)
 			local l = .05
-			gl.glBegin(gl.GL_LINE_STRIP)
+			--gl.glBegin(gl.GL_LINE_STRIP)
+			local vtxs = self.lineStripObj:beginUpdate()
 			for i=1,100 do
 				u = u + du_dl * l
 				local dp_du = self.get_dp_du1(u:unpack())
 				local dp_dv = self.get_dp_du2(u:unpack())
 				local n = dp_du:cross(dp_dv)
-				gl.glVertex3d((self.getpt(u:unpack()) + n * (.01 * sign)):unpack())
+				vtxs:emplace_back():set((self.getpt(u:unpack()) + n * (.01 * sign)):unpack())
+				--gl.glVertex3d((self.getpt(u:unpack()) + n * (.01 * sign)):unpack())
 			end
-			gl.glEnd()
+			--gl.glEnd()
+			self.lineStripObj:endUpdate()
 		end
 
-		gl.glColor3f(.5,0,.75)
+		--gl.glColor3f(.5,0,.75)
+		self.lineStripObj.uniforms.color = {.5, 0, .75}
 		for sign=-1,1,2 do
 			local u = self.selectedPt
 			local du_dl = matrix(self.dir)
 			local dl = .05
-			gl.glBegin(gl.GL_LINE_STRIP)
+			--gl.glBegin(gl.GL_LINE_STRIP)
+			local vtxs = self.lineStripObj:beginUpdate()
 			for iter=1,100 do
 				-- x''^a + Gamma^a_uv x'^u x'^v = 0
 				-- x''^a = -Gamma^a_uv x'^u x'^v
@@ -755,9 +802,11 @@ function App:update()
 				local dp_du = self.get_dp_du1(u:unpack())
 				local dp_dv = self.get_dp_du2(u:unpack())
 				local n = dp_du:cross(dp_dv)
-				gl.glVertex3d((self.getpt(u:unpack()) + n * (.01 * sign)):unpack())
+				vtxs:emplace_back():set((self.getpt(u:unpack()) + n * (.01 * sign)):unpack())
+				--gl.glVertex3d((self.getpt(u:unpack()) + n * (.01 * sign)):unpack())
 			end
-			gl.glEnd()
+			--gl.glEnd()
+			self.lineStripObj:endUpdate()
 		end
 	end
 
@@ -767,19 +816,23 @@ function App:update()
 end
 
 function App:drawMesh(method)
-	self.view:setupModelView()
+	self.view:setup(self.width / self.height)
 	if method == 'display' then
 		if self.displayPtr == displayIndexes.grid then
 			self.gridShader:use()
+			self.gridShader:setUniform('mvMat', self.view.mvMat.ptr)
+			self.gridShader:setUniform('projMat', self.view.projMat.ptr)
 			gl.glUniform2f(self.gridShader.uniforms.step.loc, params[1].step, params[2].step)
 		elseif self.displayPtr == displayIndexes.Gaussian then
 			self.gradientShader:use()
+			self.gradientShader:setUniform('mvProjMat', self.view.mvProjMat.ptr)
 			self.gaussianTex:bind(0)
 			self.gradientTex:bind(1)
 			gl.glUniform2f(self.gradientShader.uniforms.mins.loc, params[1].min, params[2].min)
 			gl.glUniform2f(self.gradientShader.uniforms.maxs.loc, params[1].max, params[2].max)
 		elseif self.displayPtr == displayIndexes.Ricci then
 			self.gradientShader:use()
+			self.gradientShader:setUniform('mvProjMat', self.view.mvProjMat.ptr)
 			self.ricciTex:bind(0)
 			self.gradientTex:bind(1)
 			gl.glUniform2f(self.gradientShader.uniforms.mins.loc, params[1].min, params[2].min)
@@ -787,6 +840,7 @@ function App:drawMesh(method)
 		end
 	elseif method == 'pick' then
 		self.pickShader:use()
+		self.pickShader:setUniform('mvProjMat', self.view.mvProjMat.ptr)
 	end
 	gl.glCallList(self.displayList)
 	GLTex2D:unbind(1)
