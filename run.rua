@@ -143,19 +143,19 @@ local options = table{
 }
 
 local controls = table{'rotate', 'select', 'direct'}
-local controlIndexes = controls:mapi([v,k](k,v))
+local controlIndexes = controls:mapi(|v,k|(k,v))
 
 local displays = table{'grid', 'Gaussian', 'Ricci'}
-local displayIndexes = displays:mapi([v,k](k,v))
+local displayIndexes = displays:mapi(|v,k|(k,v))
 
-App.init = [:, ...] do
+App.init = |:, ...| do
 	App.super.init(self, ...)
 
 	self.dir = matrix{0,0}
 	self.consts = {}
 end
 
-App.initGL = [:, ...] do
+App.initGL = |:, ...| do
 	App.super.initGL(self, ...)
 
 	gl.glClearColor(1,1,1,1)
@@ -334,11 +334,11 @@ void main() {
 			{254,96,50},
 			{255,188,46},
 			{255,255,55},
-		}:mapi([c,i] table(matrix(c)/255):append{1}),
+		}:mapi(|c,i| table(matrix(c)/255):append{1}),
 --]]
 		false)
 
-	local makeFloatTex = [] GLTex2D{
+	local makeFloatTex = || GLTex2D{
 		width = 256,
 		height = 256,
 		internalFormat = gl.GL_RGBA32F,
@@ -367,13 +367,13 @@ void main() {
 	self.displayPtr = displayIndexes.grid
 end
 
-App.calculateMesh = [:] do
+App.calculateMesh = |:| do
 
 	-- refresh ...
 
-	local vars = params:mapi([param] param.var)
+	local vars = params:mapi(|param| param.var)
 
-	local compileWithConsts = [expr] do
+	local compileWithConsts = |expr| do
 		expr = symmath.clone(expr)()
 		for var,value in pairs(self.consts) do
 			expr = expr:replace(var, value)()
@@ -395,7 +395,7 @@ App.calculateMesh = [:] do
 		local eta = Tensor('_IJ', {1,0,0},{0,1,0},{0,0,1})
 		flatChart:setMetric(eta, eta, 'I')
 
-		local p = Tensor('^I', eqns:mapi([eqn] eqn.expr):unpack())
+		local p = Tensor('^I', eqns:mapi(|eqn| eqn.expr):unpack())
 		local e = p'^I_,u'():permute'_u^I'
 		local g = (e'_u^I' * e'_v^J' * eta'_IJ')()
 		chart:setMetric(g)
@@ -408,12 +408,12 @@ App.calculateMesh = [:] do
 		local Ricci = Riemann'^c_acb'():permute'_ab'
 		local Gaussian = Ricci'^a_a'()
 
-		local addStrs = [name, expr] do
+		local addStrs = |name, expr| do
 			if symmath.Tensor:isa(expr) then
 				local any
 				for k,v in expr:iter() do
 					if v ~= symmath.Constant(0) then
-						local i = table.mapi(expr.variance, [v,i]((v.lower?'_':'^')..k[i])):concat()
+						local i = table.mapi(expr.variance, |v,i|((v.lower?'_':'^')..k[i])):concat()
 						self.strs:insert(name..i..' = '..v)
 						any = true
 					end
@@ -438,15 +438,15 @@ App.calculateMesh = [:] do
 		end
 
 		local func_Gamma = compileWithConsts(Gamma)
-		self.Gamma = [...] matrix(func_Gamma(...))
+		self.Gamma = |...| matrix(func_Gamma(...))
 
 		local func_Ricci = compileWithConsts(Ricci)
-		self.Ricci = [...] matrix(func_Ricci(...))
+		self.Ricci = |...| matrix(func_Ricci(...))
 
 		self.Gaussian = compileWithConsts(Gaussian)
 	end
 
-	self.getpt = [u1value, u2value] do
+	self.getpt = |u1value, u2value| do
 		local pt = matrix()
 		for i=1,3 do
 			pt[i] = eqns?[i].func(u1value, u2value)
@@ -456,17 +456,17 @@ App.calculateMesh = [:] do
 
 	local u1, u2 = params:unpack()
 
-	self.get_dp_du1 = [u1value, u2value] do
+	self.get_dp_du1 = |u1value, u2value| do
 		local du = (u1.max - u1.min) / u1.divs
 		return ((self.getpt(u1value + du, u2value) - self.getpt(u1value - du, u2value))):normalize()
 	end
 
-	self.get_dp_du2 = [u1value, u2value] do
+	self.get_dp_du2 = |u1value, u2value| do
 		local dv = (u2.max - u2.min) / u2.divs
 		return ((self.getpt(u1value, u2value + dv) - self.getpt(u1value, u2value - dv))):normalize()
 	end
 
-	self.get_dp_du = [...] matrix{
+	self.get_dp_du = |...| matrix{
 		self.get_dp_du1(...),
 		self.get_dp_du2(...),
 	}
@@ -549,7 +549,7 @@ App.calculateMesh = [:] do
 	self:updateRicciTex()
 end
 
-App.updateRicciTex = [:] do
+App.updateRicciTex = |:| do
 	local u1, u2 = params:unpack()
 	local buf = ffi.new('float[?]', self.gaussianTex.width * self.gaussianTex.height * 4)
 	local ricciMin = math.huge
@@ -582,9 +582,9 @@ App.updateRicciTex = [:] do
 
 end
 
-local I = [...]...
+local I = |...|...
 
-App.event = [:, event, ...] do
+App.event = |:, event, ...| do
 	-- TODO disable orbit
 	if self.controlPtr ~= controlIndexes.rotate then
 		pushView = View(self.view)
@@ -595,14 +595,14 @@ App.event = [:, event, ...] do
 	end
 end
 
-App.setOption = [:, option] do
-	self.consts = table.map(option.consts, [v,k] (v, symmath.var(k)))
+App.setOption = |:, option| do
+	self.consts = table.map(option.consts, |v,k| (v, symmath.var(k)))
 	for i=1,#option.vars do
 		params[i].min = option.mins[i]
 		params[i].max = option.maxs[i]
 		params[i].step = option.step[i]
 	end
-	local vars = params:mapi([param] param.var)
+	local vars = params:mapi(|param| param.var)
 	local varnames = table(option.vars)
 	for varname,value in pairs(option.consts) do
 		varnames:insert(varname)
@@ -626,7 +626,7 @@ App.setOption = [:, option] do
 	self.selectedPt = (matrix(option.mins) + matrix(option.maxs)) * .5
 end
 
-App.updateGUI = [:] do
+App.updateGUI = |:| do
 	if ig.igCollapsingHeader'controls:' then
 		for i,control in ipairs(controls) do
 			ig.luatableRadioButton(control, self, 'controlPtr', i)
@@ -692,7 +692,7 @@ App.updateGUI = [:] do
 	end
 end
 
-App.getCoord = [:, mx, my] do
+App.getCoord = |:, mx, my| do
 	local results = ffi.new'float[4]'
 	local depth = ffi.new'float[1]'
 	gl.glViewport(0, 0, self.fbo.width, self.fbo.height)
@@ -716,7 +716,7 @@ App.getCoord = [:, mx, my] do
 	return u
 end
 
-App.update = [:] do
+App.update = |:| do
 	local canHandleMouse = not ig.igGetIO()[0].WantCaptureMouse
 	local canHandleKeyboard = not ig.igGetIO()[0].WantCaptureKeyboard
 
@@ -816,7 +816,7 @@ App.update = [:] do
 	glreport'here'
 end
 
-App.drawMesh = [:, method] do
+App.drawMesh = |:, method| do
 	self.view:setup(self.width / self.height)
 	local program
 	if method == 'display' then
