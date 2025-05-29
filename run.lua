@@ -33,7 +33,6 @@ TODO:
 --]]
 require 'ext'
 local ffi = require 'ffi'
-local sdl = require 'sdl.setup'(cmdline.sdl)
 local gl = require 'gl.setup'(cmdline.gl)
 local ig = require 'imgui'
 local GLProgram = require 'gl.program'
