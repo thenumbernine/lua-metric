@@ -39,7 +39,7 @@ local GLProgram = require 'gl.program'
 local GLTex2D = require 'gl.tex2d'
 local GradientTex = require 'gl.gradienttex2d'
 local glreport = require 'gl.report'
-local FBO = require 'gl.fbo'
+local GLFramebuffer = require 'gl.framebuffer'
 local GLGeometry = require 'gl.geometry'
 local GLSceneObject = require 'gl.sceneobject'
 local matrix = require 'matrix'
@@ -354,7 +354,7 @@ void main() {
 	end
 
 	self.floatTex = makeFloatTex()
-	self.fbo = FBO{
+	self.fbo = GLFramebuffer{
 		width = self.floatTex.width,
 		height = self.floatTex.height,
 		useDepth = true,
@@ -755,7 +755,7 @@ function App:update()
 					-- if we change dir and are showing ricci curvature then update the mesh
 					-- TODO do this in GPU
 					-- but that means finding the min/max in GPU as well
-					-- which isn't so tough ... just do a FBO reduce (might be easier in OpenCL)
+					-- which isn't so tough ... just do a GLFramebuffer reduce (might be easier in OpenCL)
 					if self.displayPtr == displayIndexes.Ricci then
 						self:updateRicciTex()
 					end
