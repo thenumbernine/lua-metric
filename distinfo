@@ -1,12 +1,17 @@
+--------------------------------------------
+-- generated with dist/build-distinfo.rua --
+--------------------------------------------
+
 name = "metric"
 files = {
-	["README.md"] = "metric/README.md",
-	["images/gaussian.png"] = "metric/images/gaussian.png",
-	["images/geodesic.png"] = "metric/images/geodesic.png",
-	["images/ricci 1.png"] = "metric/images/ricci 1.png",
-	["images/ricci 2.png"] = "metric/images/ricci 2.png",
-	["run.lua"] = "metric/run.lua",
-	["run.rua"] = "metric/run.rua",
+	"README.md",
+	"distinfo",
+	"images/gaussian.png",
+	"images/geodesic.png",
+	"images/ricci 1.png",
+	"images/ricci 2.png",
+	"run.lua",
+	"run.rua",
 }
 deps = {
 	"ext",
@@ -14,6 +19,5 @@ deps = {
 	"glapp",
 	"imgui",
 	"matrix",
-	"sdl",
 	"symmath",
 }
