@@ -38,7 +38,6 @@ local ig = require 'imgui'
 local GLProgram = require 'gl.program'
 local GLTex2D = require 'gl.tex2d'
 local GradientTex = require 'gl.gradienttex2d'
-local glreport = require 'gl.report'
 local GLFramebuffer = require 'gl.framebuffer'
 local GLGeometry = require 'gl.geometry'
 local GLSceneObject = require 'gl.sceneobject'
@@ -593,8 +592,6 @@ function App:updateRicciTex()
 	self.ricciTex:bind()
 	gl.glTexSubImage2D(gl.GL_TEXTURE_2D, 0, 0, 0, self.ricciTex.width, self.ricciTex.height, gl.GL_RGBA, gl.GL_FLOAT, buf)
 	self.ricciTex:unbind()
-	glreport'here'
-
 end
 
 function App:event(event, ...)
@@ -829,8 +826,6 @@ function App:update()
 	end
 
 	App.super.update(self)
-
-	glreport'here'
 end
 
 function App:drawMesh(method)
