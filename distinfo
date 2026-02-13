@@ -14,9 +14,9 @@ files = {
 	"run.rua",
 }
 deps = {
+	"app3d",
 	"ext",
 	"gl",
-	"glapp",
 	"imgui",
 	"matrix",
 	"symmath",

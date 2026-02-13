@@ -45,7 +45,7 @@ local matrix = require 'matrix'
 local symmath = require 'symmath'
 symmath.tostring = require 'symmath.export.SingleLine'
 
-local View = require 'glapp.view'
+local View = require 'app3d.view'
 
 local App = require 'imgui.appwithorbit'()
 App.viewDist = 3
